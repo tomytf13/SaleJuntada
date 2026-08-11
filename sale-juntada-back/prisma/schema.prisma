@@ -1,0 +1,144 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL_UNPOOLED")
+}
+
+enum GatheringStatus {
+  DRAFT
+  OPEN
+  PROPOSED
+  CONFIRMED
+  CANCELLED
+}
+
+enum AvailabilityKind {
+  AVAILABLE
+  MAYBE
+  UNAVAILABLE
+}
+
+enum ProposalStatus {
+  SUGGESTED
+  SELECTED
+  REJECTED
+}
+
+model Gathering {
+  id                String          @id @default(cuid())
+  slug              String          @unique
+  title             String
+  description       String?
+  locationHint      String?
+  locationLatitude  Float?
+  locationLongitude Float?
+  organizerName     String
+  windowStart       DateTime
+  windowEnd         DateTime
+  durationMinutes   Int             @default(180)
+  dailyStartMinutes Int             @default(780)
+  dailyEndMinutes   Int             @default(1440)
+  slotStepMinutes   Int             @default(480)
+  status            GatheringStatus @default(OPEN)
+  finalizedStart    DateTime?
+  finalizedEnd      DateTime?
+  finalizedLocation String?
+  expenseRound       Int             @default(1)
+  participants      Participant[]
+  proposals         Proposal[]
+  expenses          Expense[]
+  transferConfirmations TransferConfirmation[]
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([status, windowStart])
+}
+
+model Participant {
+  id             String         @id @default(cuid())
+  gatheringId    String
+  gathering      Gathering      @relation(fields: [gatheringId], references: [id], onDelete: Cascade)
+  name           String
+  contact        String?
+  avatarUrl      String?
+  googleSubject  String?
+  isOrganizer    Boolean        @default(false)
+  responseToken  String         @unique @default(cuid())
+  expensesReadyAt DateTime?
+  availabilities Availability[]
+  expensesPaid   Expense[]
+  transfersSent  TransferConfirmation[] @relation("TransferFrom")
+  transfersReceived TransferConfirmation[] @relation("TransferTo")
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([gatheringId])
+  @@unique([gatheringId, googleSubject])
+}
+
+model Availability {
+  id            String           @id @default(cuid())
+  participantId String
+  participant   Participant      @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  startsAt      DateTime
+  endsAt        DateTime
+  kind          AvailabilityKind @default(AVAILABLE)
+  note          String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@unique([participantId, startsAt, endsAt])
+  @@index([startsAt, endsAt])
+}
+
+model Expense {
+  id                  String      @id @default(cuid())
+  gatheringId         String
+  gathering           Gathering   @relation(fields: [gatheringId], references: [id], onDelete: Cascade)
+  paidByParticipantId String
+  paidBy              Participant @relation(fields: [paidByParticipantId], references: [id], onDelete: Cascade)
+  description         String
+  amountCents         Int
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  @@index([gatheringId, createdAt])
+  @@index([paidByParticipantId])
+}
+
+model TransferConfirmation {
+  id                String      @id @default(cuid())
+  gatheringId       String
+  gathering         Gathering   @relation(fields: [gatheringId], references: [id], onDelete: Cascade)
+  fromParticipantId String
+  fromParticipant   Participant @relation("TransferFrom", fields: [fromParticipantId], references: [id], onDelete: Cascade)
+  toParticipantId   String
+  toParticipant     Participant @relation("TransferTo", fields: [toParticipantId], references: [id], onDelete: Cascade)
+  amountCents       Int
+  confirmedAt       DateTime    @default(now())
+
+  @@unique([gatheringId, fromParticipantId, toParticipantId, amountCents])
+  @@index([gatheringId])
+}
+
+model Proposal {
+  id               String         @id @default(cuid())
+  gatheringId      String
+  gathering        Gathering      @relation(fields: [gatheringId], references: [id], onDelete: Cascade)
+  startsAt         DateTime
+  endsAt           DateTime
+  availableCount   Int
+  maybeCount       Int            @default(0)
+  unavailableCount Int            @default(0)
+  score            Float
+  explanation      String?
+  status           ProposalStatus @default(SUGGESTED)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@index([gatheringId, score])
+}

@@ -1,98 +1,97 @@
-# vinext-starter
+# Sale Juntada
 
-A clean full-stack starter running on
-[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
-Drizzle support.
+Aplicación web mobile-first para coordinar juntadas sin encuestas eternas.
 
-## Prerequisites
+## Stack
 
-- Node.js `>=22.13.0`
+La base replica el stack tecnológico de Turnero:
 
-## Quick Start
+- Frontend: React 19, TypeScript, Vite, Tailwind CSS, React Router y TanStack Query.
+- Backend: NestJS, Prisma, PostgreSQL/Neon, Swagger y Socket.IO.
+- Calidad: Vitest y Playwright.
+
+## Estructura
+
+- `sale-juntada-front/`: experiencia web para organizadores e invitados.
+- `sale-juntada-back/`: API, dominio de juntadas y cálculo de coincidencias.
+- `sale-juntada-e2e/`: pruebas de los recorridos críticos.
+
+## Desarrollo local
+
+Frontend:
 
 ```bash
+cd sale-juntada-front
 npm install
 npm run dev
-npm run build
 ```
 
-This starter does not use `wrangler.jsonc`.
+Backend:
 
-## Included Shape
-
-- edit site code under `app/`
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/schema.ts` starts intentionally empty
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
-
-## Workspace Auth Headers
-
-OpenAI workspace sites can read the current user's email from
-`oai-authenticated-user-email`.
-
-SIWC-authenticated workspace sites may also receive
-`oai-authenticated-user-full-name` when the user's SIWC profile has a non-empty
-`name` claim. The full-name value is percent-encoded UTF-8 and is accompanied by
-`oai-authenticated-user-full-name-encoding: percent-encoded-utf-8`.
-
-Treat the full name as optional and fall back to email when it is absent:
-
-```tsx
-import { headers } from "next/headers";
-
-export default async function Home() {
-  const requestHeaders = await headers();
-  const email = requestHeaders.get("oai-authenticated-user-email");
-  const encodedFullName = requestHeaders.get("oai-authenticated-user-full-name");
-  const fullName =
-    encodedFullName &&
-    requestHeaders.get("oai-authenticated-user-full-name-encoding") ===
-      "percent-encoded-utf-8"
-      ? decodeURIComponent(encodedFullName)
-      : null;
-
-  const displayName = fullName ?? email;
-  // ...
-}
+```bash
+cd sale-juntada-back
+cp .env.example .env
+npm install
+npm run prisma:generate
+npm run migrate:deploy
+npm run start:dev
 ```
 
-## Optional Dispatch-Owned ChatGPT Sign-In
+La API queda disponible en `http://localhost:3001/api` y Swagger en
+`http://localhost:3001/api/docs`.
 
-Import the ready-to-use helpers from `app/chatgpt-auth.ts` when the site needs
-optional or required ChatGPT sign-in:
+## Producción
 
-- Use `getChatGPTUser()` for optional signed-in UI.
-- Use `requireChatGPTUser(returnTo)` for server-rendered pages that should send
-  anonymous visitors through Sign in with ChatGPT.
-- Use `chatGPTSignInPath(returnTo)` and `chatGPTSignOutPath(returnTo)` for
-  browser links or actions.
-- Pass a same-origin relative `returnTo` path for the destination after sign-in
-  or sign-out. The helper validates and safely encodes it.
-- Mark protected pages with `export const dynamic = "force-dynamic"` because
-  they depend on per-request identity headers.
+- Frontend (Vercel): https://sale-juntada-front.vercel.app
+- API (Fly.io, región `gru`): https://sale-juntada-api-tomytf13.fly.dev/api
+- Base de datos: Neon Postgres
 
-Dispatch owns `/signin-with-chatgpt`, `/signout-with-chatgpt`, `/callback`, the
-OAuth cookies, and identity header injection. Do not implement app routes for
-those reserved paths. Routes that do not import and call the helper remain
-anonymous-compatible.
+El frontend se compila con `VITE_API_URL` y `VITE_SOCKET_URL`. El backend
+ejecuta `prisma migrate deploy` antes de cada release y restringe HTTP y
+Socket.IO al dominio configurado en `FRONTEND_URLS`.
 
-SIWC establishes identity only; it does not prove workspace membership. Use the
-Sites hosting platform's access policy controls for workspace-wide restrictions,
-or enforce explicit server-side membership or allowlist checks.
+## Base de datos con Neon
 
-Use SIWC for account pages, user-specific dashboards, saved records, and write
-actions tied to the current ChatGPT user. Leave public content anonymous.
+El backend está preparado para Neon Postgres mediante dos conexiones:
 
-## Useful Commands
+- `DATABASE_URL`: conexión pooled usada por NestJS y Prisma Client.
+- `DATABASE_URL_UNPOOLED`: conexión directa usada por Prisma Migrate.
 
-- `npm run dev`: start local development
-- `npm run build`: verify the vinext build output
-- `npm test`: build the starter and verify its rendered loading skeleton
-- `npm run db:generate`: generate Drizzle migrations after schema changes
+Para enlazar una instalación nueva:
 
-## Learn More
+```bash
+cd sale-juntada-back
+npx -y neon@latest init
+npx -y neon env pull
+```
 
-- [vinext Documentation](https://github.com/cloudflare/vinext)
-- [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
+Luego aplicar las migraciones y levantar la API:
+
+```bash
+npm run migrate:deploy
+npm run start:dev
+```
+
+Las credenciales permanecen en `sale-juntada-back/.env`, archivo ignorado por
+Git.
+
+## Primer alcance
+
+- Crear una juntada con rango de fechas y duración.
+- Incorporar participantes sin obligarlos a registrarse.
+- Cargar disponibilidad exacta o tentativa.
+- Ordenar las tres mejores coincidencias.
+- Preparar la confirmación y el enlace para compartir.
+
+## Próximas integraciones
+
+- Google Calendar: cada participante podrá conectar su cuenta de forma opcional
+  para importar automáticamente sus bloques ocupados, sin compartir nombres ni
+  detalles de sus eventos.
+- La disponibilidad manual seguirá funcionando para quienes no usen Calendar y
+  permitirá corregir o complementar lo importado.
+- Al confirmar la juntada, se podrá agregar el evento al calendario de cada
+  participante con una acción explícita.
+
+El alcance funcional, las decisiones de privacidad y los criterios de aceptación
+están documentados en [`docs/google-calendar.md`](docs/google-calendar.md).
