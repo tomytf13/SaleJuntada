@@ -1,4 +1,14 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+  FormEvent,
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { AnimatePresence, m } from "framer-motion";
 import { useLocation, useNavigate } from "react-router-dom";
 import { io, Socket } from "socket.io-client";
 import {
@@ -8,15 +18,28 @@ import {
   Match,
   SOCKET_URL,
 } from "./services/gatheringService";
-import {
-  LocationPicker,
-  SelectedLocation,
-} from "./components/LocationPicker";
+import type { SelectedLocation } from "./components/LocationPicker";
 import {
   MobileBottomNav,
   MobileDashboard,
   PurchasePlanner,
 } from "./components/MobileExperience";
+import { AnimatedDialog } from "./components/AnimatedDialog";
+import { AnimatedToast } from "./components/AnimatedToast";
+import { useActiveSection } from "./hooks/useActiveSection";
+import {
+  listItemVariants,
+  listVariants,
+  quickTransition,
+  springTransition,
+  standardTransition,
+} from "./motion/config";
+
+const LocationPicker = lazy(() =>
+  import("./components/LocationPicker").then((module) => ({
+    default: module.LocationPicker,
+  })),
+);
 
 type Slot = {
   id: string;
@@ -293,9 +316,15 @@ export default function Home() {
     Array<{ participantId: string; name: string }>
   >([]);
   const [isLiveConnected, setIsLiveConnected] = useState(false);
+  const [purchaseRevision, setPurchaseRevision] = useState(0);
   const socketRef = useRef<Socket | null>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const googleButtonRef = useRef<HTMLDivElement | null>(null);
+  const activeSection = useActiveSection();
+  const showNotice = useCallback((message: string) => {
+    setNotice(message);
+    window.setTimeout(() => setNotice(""), 2800);
+  }, []);
 
   const slots = useMemo(
     () => activeGathering ? buildGatheringSlots(activeGathering) : demoSlots,
@@ -558,6 +587,9 @@ export default function Home() {
     );
     socket.on("expenses:changed", refreshExpenses);
     socket.on("transfers:changed", refreshExpenses);
+    socket.on("purchase:changed", () => {
+      setPurchaseRevision((current) => current + 1);
+    });
 
     return () => {
       socket.disconnect();
@@ -1084,6 +1116,19 @@ export default function Home() {
           <span>Sale Juntada</span>
         </a>
         <div className="header-actions">
+          {activeGathering ? (
+            <m.span
+              className={`connection-status ${isLiveConnected ? "connected" : "reconnecting"}`}
+              role="status"
+              key={isLiveConnected ? "connected" : "reconnecting"}
+              initial={{ opacity: 0, scale: 0.94 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={springTransition}
+            >
+              <i aria-hidden="true" />
+              {isLiveConnected ? "En vivo" : "Reconectando"}
+            </m.span>
+          ) : null}
           <button className="icon-button" aria-label="Notificaciones">●</button>
           <button className="avatar-button" aria-label="Tu perfil">
             {activeGathering && participantSession
@@ -1115,7 +1160,12 @@ export default function Home() {
       />
 
       <section className="hero desktop-hero" id="inicio">
-        <div className="hero-copy">
+        <m.div
+          className="hero-copy"
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={standardTransition}
+        >
           <span className="eyebrow"><SparkIcon /> Coordinar sin vueltas</span>
           <h1>Que coincidir sea<br /><em>la parte fácil.</em></h1>
           <p>
@@ -1128,9 +1178,15 @@ export default function Home() {
             </button>
             <a className="text-link" href="#disponibilidad">Ver cómo funciona</a>
           </div>
-        </div>
+        </m.div>
 
-        <div className="match-card" aria-label="Mejor coincidencia">
+        <m.div
+          className="match-card"
+          aria-label="Mejor coincidencia"
+          initial={{ opacity: 0, y: 18, rotate: 0.6 }}
+          animate={{ opacity: 1, y: 0, rotate: 0 }}
+          transition={springTransition}
+        >
           <div className="match-card-top">
             <span className="mini-label">Mejor coincidencia</span>
             <span className="match-pill"><SparkIcon /> {heroData.pill}</span>
@@ -1174,16 +1230,18 @@ export default function Home() {
             </p>
           </div>
           <div className="progress-track">
-            <span
-              style={{
+            <m.span
+              initial={false}
+              animate={{
                 width: `${heroData.total > 0
                   ? Math.round((heroData.available / heroData.total) * 100)
                   : 0}%`,
               }}
+              transition={standardTransition}
             />
           </div>
           <div className="ai-note"><SparkIcon /> {heroData.note}</div>
-        </div>
+        </m.div>
       </section>
 
       {isLoadingGathering && (
@@ -1198,16 +1256,40 @@ export default function Home() {
         </div>
       )}
 
-      {confirmed && (
-        <section className="confirmed-banner" aria-live="polite">
-          <div className="confirmed-icon">✓</div>
+      <AnimatePresence>
+      {confirmed ? (
+        <m.section
+          className="confirmed-banner"
+          aria-live="polite"
+          initial={{ opacity: 0, y: -12, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: -8, scale: 0.99 }}
+          transition={springTransition}
+        >
+          <m.div
+            className="confirmed-icon"
+            initial={{ scale: 0, rotate: -16 }}
+            animate={{ scale: 1, rotate: 0 }}
+            transition={{ ...springTransition, delay: 0.08 }}
+          >✓</m.div>
           <div>
             <span>¡Sale juntada!</span>
             <strong>{confirmed.day} {confirmed.date} a las {confirmed.time} · {location}</strong>
           </div>
           <button onClick={shareEvent}>Compartir confirmación</button>
-        </section>
-      )}
+          <div className="confirmation-burst" aria-hidden="true">
+            {[-34, -22, -9, 10, 24, 36].map((x, index) => (
+              <m.i
+                key={x}
+                initial={{ opacity: 0, x: 0, y: 4, scale: 0 }}
+                animate={{ opacity: [0, 1, 0], x, y: -30 - (index % 3) * 8, scale: [0, 1, 0.7] }}
+                transition={{ duration: 0.72, delay: 0.08 + index * 0.035 }}
+              />
+            ))}
+          </div>
+        </m.section>
+      ) : null}
+      </AnimatePresence>
 
       <section className="workspace" id="disponibilidad">
         <div className="section-heading">
@@ -1239,7 +1321,18 @@ export default function Home() {
                 <h3>¿Cuándo podés?</h3>
                 <p>Podés elegir más de una opción.</p>
               </div>
-              <span className="selection-count">{yourSlots.length} elegidos</span>
+              <AnimatePresence mode="wait" initial={false}>
+                <m.span
+                  className="selection-count"
+                  key={yourSlots.length}
+                  initial={{ opacity: 0, y: -5, scale: 0.94 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 5, scale: 0.94 }}
+                  transition={quickTransition}
+                >
+                  {yourSlots.length} elegidos
+                </m.span>
+              </AnimatePresence>
             </div>
 
             <div className="slot-grid" role="group" aria-label="Elegí tus horarios disponibles">
@@ -1254,17 +1347,24 @@ export default function Home() {
                     {group.slots.map((slot) => {
                       const selected = yourSlots.includes(slot.id);
                       return (
-                        <button
+                        <m.button
                           key={slot.id}
                           className={`time-option ${selected ? "selected" : ""}`}
                           aria-label={`${slot.day} ${slot.date} · ${slot.time}`}
                           aria-pressed={selected}
                           disabled={isSavingAvailability}
                           onClick={() => toggleSlot(slot.id)}
+                          whileTap={{ scale: 0.965 }}
+                          layout
                         >
                           <span>{slot.time}</span>
-                          <i>{selected ? "✓" : "+"}</i>
-                        </button>
+                          <m.i
+                            key={selected ? "selected" : "available"}
+                            initial={{ scale: 0.7, rotate: selected ? -24 : 0 }}
+                            animate={{ scale: 1, rotate: 0 }}
+                            transition={springTransition}
+                          >{selected ? "✓" : "+"}</m.i>
+                        </m.button>
                       );
                     })}
                   </div>
@@ -1308,19 +1408,20 @@ export default function Home() {
                   : "6/6 respondieron"}
               </span>
             </div>
-            <div className="friend-list">
+            <m.div className="friend-list" variants={listVariants} initial="hidden" animate="visible">
+              <AnimatePresence initial={false}>
               {!activeGathering && friends.map((friend) => (
-                <div className="friend-row" key={friend.name}>
+                <m.div className="friend-row" key={friend.name} layout variants={listItemVariants} exit="exit">
                   <span className={`person-avatar ${friend.color}`}>{friend.initials}</span>
                   <div><strong>{friend.name}</strong><small>{friend.available.length} horarios disponibles</small></div>
                   <span className="check">✓</span>
-                </div>
+                </m.div>
               ))}
-              {!activeGathering && <div className="friend-row">
+              {!activeGathering && <m.div className="friend-row" layout variants={listItemVariants}>
                 <span className="person-avatar coral">VO</span>
                 <div><strong>Vos</strong><small>{yourSlots.length} horarios disponibles</small></div>
                 <span className="check">✓</span>
-              </div>}
+              </m.div>}
               {activeGathering?.participants.map((participant, index) => {
                 const availableCount = participant.id === participantSession?.participantId
                   ? yourSlots.length
@@ -1329,7 +1430,7 @@ export default function Home() {
                     ).length ?? 0;
                 const colors = ["peach", "blue", "purple", "green", "yellow", "coral"];
                 return (
-                  <div className="friend-row" key={participant.id}>
+                  <m.div className="friend-row" key={participant.id} layout variants={listItemVariants} exit="exit">
                     <ParticipantAvatar
                       name={participant.name}
                       avatarUrl={participant.avatarUrl}
@@ -1349,26 +1450,35 @@ export default function Home() {
                     <span className={availableCount > 0 ? "check" : "pending"}>
                       {availableCount > 0 ? "✓" : "·"}
                     </span>
-                  </div>
+                  </m.div>
                 );
               })}
-            </div>
+              </AnimatePresence>
+            </m.div>
           </aside>
         </div>
 
-        <button className="find-button" onClick={findBestMoment}>
+        <m.button
+          className="find-button"
+          onClick={findBestMoment}
+          whileHover={{ y: -2 }}
+          whileTap={{ scale: 0.975 }}
+          transition={quickTransition}
+        >
           <SparkIcon /> Encontrar el mejor momento
-        </button>
+        </m.button>
         <p className="find-caption">Analizamos todas las disponibilidades y te damos las mejores opciones.</p>
 
         {confirmed && (
           <PurchasePlanner
             gatheringKey={activeGathering?.id ?? "demo"}
+            gatheringId={activeGathering?.id}
+            participantId={participantSession?.participantId}
+            participantToken={participantSession?.responseToken}
+            canEdit={Boolean(currentParticipant?.isOrganizer)}
+            remoteRevision={purchaseRevision}
             participantCount={activeGathering?.participants.length ?? 6}
-            onNotice={(message) => {
-              setNotice(message);
-              window.setTimeout(() => setNotice(""), 2800);
-            }}
+            onNotice={showNotice}
           />
         )}
 
@@ -1405,16 +1515,18 @@ export default function Home() {
               {liveMembers.length > 0 && (
                 <span>{listNames(liveMembers.map((member) => member.name))}</span>
               )}
+              <AnimatePresence initial={false}>
               {typingMembers.map((member) => (
-                <em key={`typing-${member.participantId}`}>
+                <m.em key={`typing-${member.participantId}`} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}>
                   {member.name} está cargando un gasto…
-                </em>
+                </m.em>
               ))}
               {analyzingMembers.map((member) => (
-                <em key={`analysis-${member.participantId}`}>
+                <m.em key={`analysis-${member.participantId}`} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}>
                   {member.name} está analizando horarios…
-                </em>
+                </m.em>
               ))}
+              </AnimatePresence>
             </div>
 
             {(expenseSettlement?.expenses.length ?? 0) > 0 && (
@@ -1507,8 +1619,17 @@ export default function Home() {
                   {(expenseSettlement?.expenses.length ?? 0) === 0 && (
                     <p className="empty-expenses">Todavía no cargaron gastos.</p>
                   )}
+                  <AnimatePresence initial={false}>
                   {expenseSettlement?.expenses.map((expense) => (
-                    <div className="expense-row" key={expense.id}>
+                    <m.div
+                      className="expense-row"
+                      key={expense.id}
+                      layout
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: 10 }}
+                      transition={standardTransition}
+                    >
                       <ParticipantAvatar
                         name={expense.paidBy.name}
                         avatarUrl={expense.paidBy.avatarUrl}
@@ -1519,8 +1640,9 @@ export default function Home() {
                         <small>Pagó {expense.paidBy.name}</small>
                       </div>
                       <b>{formatMoney(expense.amountCents)}</b>
-                    </div>
+                    </m.div>
                   ))}
+                  </AnimatePresence>
                 </div>
               </div>
 
@@ -1563,10 +1685,16 @@ export default function Home() {
                       </div>
                     </div>
                   )}
+                <AnimatePresence initial={false}>
                 {expenseSettlement?.transfers.map((transfer) => (
-                  <div
+                  <m.div
                     className={`transfer-row ${transfer.settled ? "settled" : ""}`}
                     key={transfer.id}
+                    layout
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    transition={standardTransition}
                   >
                     <ParticipantAvatar
                       name={transfer.fromName}
@@ -1603,8 +1731,9 @@ export default function Home() {
                         </span>
                       )}
                     </div>
-                  </div>
+                  </m.div>
                 ))}
+                </AnimatePresence>
                 {(expenseSettlement?.completedTransfers.length ?? 0) > 0 && (
                   <div className="completed-transfers">
                     <strong>Transferencias ya realizadas</strong>
@@ -1627,7 +1756,13 @@ export default function Home() {
         )}
       </section>
 
-      <section className="steps-section">
+      <m.section
+        className="steps-section"
+        initial={{ opacity: 0, y: 18 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true, amount: 0.18 }}
+        transition={standardTransition}
+      >
         <span className="section-kicker">ASÍ DE SIMPLE</span>
         <h2>Del “vemos” al “nos vemos”.</h2>
         <div className="steps-grid">
@@ -1635,10 +1770,16 @@ export default function Home() {
           <article><span>02</span><div className="step-icon">✓</div><h3>Cada uno responde</h3><p>Sin registros ni descargas. En menos de un minuto.</p></article>
           <article><span>03</span><div className="step-icon">✦</div><h3>Encontramos el match</h3><p>Ordenamos las mejores opciones y ustedes confirman.</p></article>
         </div>
-      </section>
+      </m.section>
 
       {supportAlias && (
-        <aside className="support-card">
+        <m.aside
+          className="support-card"
+          initial={{ opacity: 0, y: 16 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.2 }}
+          transition={standardTransition}
+        >
           <div className="support-emoji" aria-hidden="true">🍺</div>
           <div>
             <span>VOLUNTAD TOTALMENTE OPCIONAL</span>
@@ -1650,16 +1791,17 @@ export default function Home() {
             <strong>{supportAlias}</strong>
             <button type="button" onClick={copySupportAlias}>Copiar alias</button>
           </div>
-        </aside>
+        </m.aside>
       )}
 
-      <footer>
+      <footer id="more">
         <a className="brand" href="#inicio"><span className="brand-mark"><SparkIcon /></span><span>Sale Juntada</span></a>
         <p>Hecho para que los planes salgan.</p>
         <span>Argentina · 2026</span>
       </footer>
 
       <MobileBottomNav
+        activeSection={activeSection}
         purchaseEnabled={Boolean(confirmed)}
         onHome={() => window.scrollTo({ top: 0, behavior: "smooth" })}
         onAvailability={() => document.getElementById("disponibilidad")?.scrollIntoView({ behavior: "smooth" })}
@@ -1674,9 +1816,12 @@ export default function Home() {
         onMore={() => document.querySelector(".support-card, footer")?.scrollIntoView({ behavior: "smooth" })}
       />
 
-      {showResults && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={() => setShowResults(false)}>
-          <section className="results-sheet" role="dialog" aria-modal="true" aria-labelledby="results-title" onMouseDown={(event) => event.stopPropagation()}>
+      <AnimatedDialog
+        open={showResults}
+        onClose={() => setShowResults(false)}
+        panelClassName="results-sheet"
+        label="Resultados de la juntada"
+      >
             <button className="close-button" onClick={() => setShowResults(false)} aria-label="Cerrar">×</button>
             <span className="eyebrow"><SparkIcon /> Análisis listo</span>
             <h2 id="results-title">¿Qué falta para que salga?</h2>
@@ -1701,7 +1846,7 @@ export default function Home() {
                 <span>De menor a mayor esfuerzo</span>
               </div>
             )}
-            <div className="proposal-list">
+            <m.div className="proposal-list" variants={listVariants} initial="hidden" animate="visible">
               {activeGathering && matches.length === 0 && (
                 <div className="empty-results">
                   Todavía no hay disponibilidades cargadas. Compartí el link para
@@ -1709,7 +1854,7 @@ export default function Home() {
                 </div>
               )}
               {!activeGathering && rankedSlots.slice(0, 3).map((slot, index) => (
-                <article className={`proposal ${index === 0 ? "best" : ""}`} key={slot.id}>
+                <m.article className={`proposal ${index === 0 ? "best" : ""}`} key={slot.id} variants={listItemVariants}>
                   <div className="proposal-rank">{index + 1}</div>
                   <div className="proposal-date">
                     <strong>{slot.day} {slot.date}</strong>
@@ -1720,7 +1865,7 @@ export default function Home() {
                     <span>{slot.missing === 0 ? "Pueden todos" : `Falta ${slot.missing}`}</span>
                   </div>
                   <button onClick={() => confirmProposal(slot.id)}>Elegir</button>
-                </article>
+                </m.article>
               ))}
               {activeGathering && matches.map((match, index) => {
                 const startsAt = new Date(match.startsAt);
@@ -1739,9 +1884,11 @@ export default function Home() {
                 }).format(startsAt);
 
                 return (
-                  <article
+                  <m.article
                     className={`proposal ${index === 0 ? "best" : ""}`}
                     key={match.startsAt}
+                    variants={listItemVariants}
+                    layout
                   >
                     <div className="proposal-rank">{index + 1}</div>
                     <div className="proposal-date">
@@ -1782,20 +1929,23 @@ export default function Home() {
                         Confirmar esta fecha
                       </button>
                     )}
-                  </article>
+                  </m.article>
                 );
               })}
-            </div>
-          </section>
-        </div>
-      )}
+            </m.div>
+      </AnimatedDialog>
 
-      {showCreate && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={() => setShowCreate(false)}>
-          <form className="create-sheet" onSubmit={createEvent} onMouseDown={(event) => event.stopPropagation()}>
+      <AnimatedDialog
+        open={showCreate}
+        onClose={() => setShowCreate(false)}
+        panelClassName="create-sheet"
+        label="Crear una juntada"
+        as="form"
+        onSubmit={createEvent}
+      >
             <button type="button" className="close-button" onClick={() => setShowCreate(false)} aria-label="Cerrar">×</button>
             <span className="eyebrow"><SparkIcon /> Nueva juntada</span>
-            <h2>¿Qué plan tienen?</h2>
+            <h2 id="create-title">¿Qué plan tienen?</h2>
             <p>Con lo básico alcanza. Después el grupo completa el resto.</p>
             <label>
               Nombre de la juntada
@@ -1868,10 +2018,12 @@ export default function Home() {
                 </div>
                 <span>📍</span>
               </div>
-              <LocationPicker
-                value={selectedLocation}
-                onChange={setSelectedLocation}
-              />
+              <Suspense fallback={<div className="map-loading" role="status">Preparando el mapa…</div>}>
+                <LocationPicker
+                  value={selectedLocation}
+                  onChange={setSelectedLocation}
+                />
+              </Suspense>
             </section>
             <section className="schedule-builder">
               <div className="schedule-heading">
@@ -2010,21 +2162,18 @@ export default function Home() {
               {isSubmitting ? "Creando…" : "Crear y elegir horarios"} <span>→</span>
             </button>
             <small className="privacy-note">Nadie necesita registrarse para responder.</small>
-          </form>
-        </div>
-      )}
+      </AnimatedDialog>
 
-      {showJoin && activeGathering && (
-        <div
-          className="modal-backdrop"
-          role="presentation"
-          onMouseDown={() => setShowJoin(false)}
-        >
-          <form
-            className="create-sheet"
-            onSubmit={joinGathering}
-            onMouseDown={(event) => event.stopPropagation()}
-          >
+      <AnimatedDialog
+        open={showJoin && Boolean(activeGathering)}
+        onClose={() => setShowJoin(false)}
+        panelClassName="create-sheet"
+        label={`Sumarse a ${activeGathering?.title ?? "la juntada"}`}
+        as="form"
+        onSubmit={joinGathering}
+      >
+        {activeGathering ? (
+          <>
             <button
               type="button"
               className="close-button"
@@ -2034,7 +2183,7 @@ export default function Home() {
               ×
             </button>
             <span className="eyebrow"><SparkIcon /> Te invitaron</span>
-            <h2>Sumate a “{activeGathering.title}”</h2>
+            <h2 id="join-title">Sumate a “{activeGathering.title}”</h2>
             <p>
               Decinos cómo te llamás para guardar tu disponibilidad. No hace
               falta crear una cuenta.
@@ -2116,11 +2265,11 @@ export default function Home() {
               Sin cuenta queda en este dispositivo. Con Google también podés
               recuperarla desde otro.
             </small>
-          </form>
-        </div>
-      )}
+          </>
+        ) : null}
+      </AnimatedDialog>
 
-      {notice && <div className="toast" role="status">{notice}</div>}
+      <AnimatedToast message={notice} />
     </main>
   );
 }

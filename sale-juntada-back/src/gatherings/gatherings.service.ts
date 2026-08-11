@@ -4,7 +4,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
-import { AvailabilityKind } from "@prisma/client";
+import { AvailabilityKind, PurchaseCategory } from "@prisma/client";
 import { randomBytes } from "node:crypto";
 import { PrismaService } from "../prisma/prisma.service";
 import { AddExpenseDto } from "./dto/add-expense.dto";
@@ -13,6 +13,82 @@ import { ConfirmTransferDto } from "./dto/confirm-transfer.dto";
 import { CreateGatheringDto } from "./dto/create-gathering.dto";
 import { GoogleParticipantDto } from "./dto/google-participant.dto";
 import { SetAvailabilityDto } from "./dto/set-availability.dto";
+import { UpdatePurchasePlanDto } from "./dto/update-purchase-plan.dto";
+
+const purchaseCatalog = [
+  {
+    key: "meat",
+    label: "Carne",
+    unit: "kg",
+    category: PurchaseCategory.FOOD,
+    suggest: (people: number) => Math.max(1, Math.ceil(people * 0.45)),
+  },
+  {
+    key: "bread",
+    label: "Pan",
+    unit: "bolsas",
+    category: PurchaseCategory.FOOD,
+    suggest: (people: number) => Math.max(1, Math.ceil(people / 4)),
+  },
+  {
+    key: "salad",
+    label: "Ensalada",
+    unit: "fuentes",
+    category: PurchaseCategory.FOOD,
+    suggest: (people: number) => Math.max(1, Math.ceil(people / 3)),
+  },
+  {
+    key: "soda",
+    label: "Gaseosas",
+    unit: "botellas de 2 L",
+    category: PurchaseCategory.DRINKS,
+    suggest: (people: number) => Math.max(1, Math.ceil(people / 2)),
+  },
+  {
+    key: "water",
+    label: "Agua",
+    unit: "botellas de 2 L",
+    category: PurchaseCategory.DRINKS,
+    suggest: (people: number) => Math.max(1, Math.ceil(people / 3)),
+  },
+  {
+    key: "ice",
+    label: "Hielo",
+    unit: "bolsas",
+    category: PurchaseCategory.OTHER,
+    suggest: (people: number) => Math.max(1, Math.ceil(people / 3)),
+  },
+  {
+    key: "charcoal",
+    label: "Carbón",
+    unit: "bolsas",
+    category: PurchaseCategory.OTHER,
+    suggest: (people: number) => Math.max(1, Math.ceil(people / 4)),
+  },
+  {
+    key: "beer",
+    label: "Cerveza",
+    unit: "litros",
+    category: PurchaseCategory.ALCOHOL,
+    suggest: (people: number) => Math.max(1, people),
+  },
+];
+
+type StoredPurchasePlan = {
+  id: string;
+  includeAlcohol: boolean;
+  ageConfirmed: boolean;
+  participantBaseline: number;
+  updatedAt: Date;
+  items: Array<{
+    key: string;
+    label: string;
+    unit: string;
+    quantity: number;
+    category: PurchaseCategory;
+    position: number;
+  }>;
+};
 
 @Injectable()
 export class GatheringsService {
@@ -286,6 +362,117 @@ export class GatheringsService {
       })
       .sort((a, b) => b.score - a.score)
       .slice(0, 5);
+  }
+
+  async getPurchasePlan(gatheringId: string) {
+    const gathering = await this.prisma.gathering.findUnique({
+      where: { id: gatheringId },
+      select: {
+        _count: { select: { participants: true } },
+        purchasePlan: {
+          include: { items: { orderBy: { position: "asc" } } },
+        },
+      },
+    });
+    if (!gathering) throw new NotFoundException("Juntada no encontrada");
+
+    return this.serializePurchasePlan(
+      gathering._count.participants,
+      gathering.purchasePlan,
+    );
+  }
+
+  async updatePurchasePlan(
+    gatheringId: string,
+    participantId: string,
+    participantToken: string | undefined,
+    dto: UpdatePurchasePlanDto,
+  ) {
+    const participant = await this.prisma.participant.findFirst({
+      where: { id: participantId, gatheringId },
+      include: {
+        gathering: { select: { _count: { select: { participants: true } } } },
+      },
+    });
+    if (!participant) throw new NotFoundException("Participante no encontrado");
+    if (!participantToken || participant.responseToken !== participantToken) {
+      throw new UnauthorizedException("No podés editar esta compra");
+    }
+    if (!participant.isOrganizer) {
+      throw new UnauthorizedException(
+        "Sólo quien organiza puede editar la compra",
+      );
+    }
+
+    const quantities = new Map<string, number>();
+    for (const item of dto.items) {
+      if (quantities.has(item.key)) {
+        throw new BadRequestException("La compra contiene productos repetidos");
+      }
+      quantities.set(item.key, item.quantity);
+    }
+    const catalogKeys = new Set(purchaseCatalog.map((item) => item.key));
+    if ([...quantities.keys()].some((key) => !catalogKeys.has(key))) {
+      throw new BadRequestException("La compra contiene un producto inválido");
+    }
+
+    const participantCount = participant.gathering._count.participants;
+    const plan = await this.prisma.$transaction(async (transaction) => {
+      const savedPlan = await transaction.purchasePlan.upsert({
+        where: { gatheringId },
+        create: {
+          gatheringId,
+          includeAlcohol: dto.includeAlcohol,
+          ageConfirmed: dto.includeAlcohol && dto.ageConfirmed,
+          participantBaseline: participantCount,
+          updatedByParticipantId: participant.id,
+        },
+        update: {
+          includeAlcohol: dto.includeAlcohol,
+          ageConfirmed: dto.includeAlcohol && dto.ageConfirmed,
+          participantBaseline: participantCount,
+          updatedByParticipantId: participant.id,
+        },
+      });
+
+      await Promise.all(
+        purchaseCatalog.map((item, position) => {
+          const quantity =
+            quantities.get(item.key) ?? item.suggest(participantCount);
+          return transaction.purchaseItem.upsert({
+            where: {
+              purchasePlanId_key: {
+                purchasePlanId: savedPlan.id,
+                key: item.key,
+              },
+            },
+            create: {
+              purchasePlanId: savedPlan.id,
+              key: item.key,
+              label: item.label,
+              unit: item.unit,
+              quantity,
+              category: item.category,
+              position,
+            },
+            update: {
+              label: item.label,
+              unit: item.unit,
+              quantity,
+              category: item.category,
+              position,
+            },
+          });
+        }),
+      );
+
+      return transaction.purchasePlan.findUniqueOrThrow({
+        where: { id: savedPlan.id },
+        include: { items: { orderBy: { position: "asc" } } },
+      });
+    });
+
+    return this.serializePurchasePlan(participantCount, plan);
   }
 
   async addExpense(
@@ -609,5 +796,35 @@ export class GatheringsService {
     amountCents: number,
   ) {
     return `${fromParticipantId}:${toParticipantId}:${amountCents}`;
+  }
+
+  private serializePurchasePlan(
+    participantCount: number,
+    plan: StoredPurchasePlan | null,
+  ) {
+    const storedItems = new Map(
+      plan?.items.map((item) => [item.key, item]) ?? [],
+    );
+    return {
+      id: plan?.id ?? null,
+      persisted: Boolean(plan),
+      includeAlcohol: plan?.includeAlcohol ?? false,
+      ageConfirmed: plan?.ageConfirmed ?? false,
+      participantCount,
+      participantBaseline: plan?.participantBaseline ?? participantCount,
+      updatedAt: plan?.updatedAt ?? null,
+      items: purchaseCatalog.map((item, position) => {
+        const stored = storedItems.get(item.key);
+        return {
+          key: item.key,
+          label: item.label,
+          unit: item.unit,
+          category: item.category.toLowerCase(),
+          position,
+          quantity: stored?.quantity ?? item.suggest(participantCount),
+          suggestedQuantity: item.suggest(participantCount),
+        };
+      }),
+    };
   }
 }

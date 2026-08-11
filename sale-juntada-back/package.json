@@ -23,6 +23,7 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
+    "test:purchase-smoke": "node scripts/verify-purchase.mjs",
     "db:local:start": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/start-local-db.ps1",
     "db:local:stop": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/stop-local-db.ps1",
     "db:setup": "npm run db:local:start && npm run migrate:deploy && npm run prisma:seed",

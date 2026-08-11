@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, m } from "framer-motion";
 import {
   ArrowRight,
   CalendarDays,
@@ -15,6 +16,19 @@ import {
   Sparkles,
   Users,
 } from "lucide-react";
+import type { AppSection } from "../hooks/useActiveSection";
+import {
+  gatheringService,
+  type PurchaseItem,
+  type PurchasePlan,
+} from "../services/gatheringService";
+import {
+  listItemVariants,
+  listVariants,
+  quickTransition,
+  springTransition,
+  standardTransition,
+} from "../motion/config";
 
 type MatchPreview = {
   weekday: string;
@@ -60,8 +74,19 @@ export function MobileDashboard({
   onOpenResults,
 }: MobileDashboardProps) {
   return (
-    <section className="mobile-dashboard" aria-label="Resumen de Sale Juntada">
-      <div className="mobile-welcome">
+    <m.section
+      className="mobile-dashboard"
+      aria-label="Resumen de Sale Juntada"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={standardTransition}
+    >
+      <m.div
+        className="mobile-welcome"
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={standardTransition}
+      >
         <span className="mobile-kicker"><Sparkles size={14} /> Coordinar sin vueltas</span>
         <h1>{active ? "La juntada ya está en marcha." : "Hagamos que el plan salga."}</h1>
         <p>
@@ -69,10 +94,18 @@ export function MobileDashboard({
             ? "Respondé, compartí y cerrá el horario sin perseguir mensajes."
             : "Creá una juntada y mandá un solo link al grupo."}
         </p>
-      </div>
+      </m.div>
 
+      <AnimatePresence mode="wait" initial={false}>
       {confirmed ? (
-        <article className="mobile-confirmed-card">
+        <m.article
+          className="mobile-confirmed-card"
+          key="confirmed"
+          initial={{ opacity: 0, y: 16, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: -10, scale: 0.99 }}
+          transition={springTransition}
+        >
           <span className="mobile-card-label"><Check size={14} /> Fecha confirmada</span>
           <h2>¡Sale!</h2>
           <p>{confirmed.day} {confirmed.date} · {confirmed.time}</p>
@@ -80,9 +113,16 @@ export function MobileDashboard({
           <button type="button" onClick={onShare}>
             Compartir confirmación <Share2 size={17} />
           </button>
-        </article>
+        </m.article>
       ) : active ? (
-        <article className="mobile-active-card">
+        <m.article
+          className="mobile-active-card"
+          key="active"
+          initial={{ opacity: 0, y: 16, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: -10, scale: 0.99 }}
+          transition={springTransition}
+        >
           <div className="mobile-card-heading">
             <div>
               <span className="mobile-card-label">Juntada activa</span>
@@ -113,9 +153,16 @@ export function MobileDashboard({
               Ver resultados <ChevronRight size={17} />
             </button>
           </div>
-        </article>
+        </m.article>
       ) : (
-        <article className="mobile-create-card">
+        <m.article
+          className="mobile-create-card"
+          key="create"
+          initial={{ opacity: 0, y: 16, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: -10, scale: 0.99 }}
+          transition={springTransition}
+        >
           <div className="mobile-create-illustration"><CalendarDays size={31} /></div>
           <span className="mobile-card-label">Tu próxima juntada</span>
           <h2>Primero, lo básico.</h2>
@@ -123,19 +170,21 @@ export function MobileDashboard({
           <button type="button" onClick={onCreate}>
             Crear una juntada <ArrowRight size={18} />
           </button>
-        </article>
+        </m.article>
       )}
+      </AnimatePresence>
 
       {!active && (
         <button type="button" className="mobile-demo-link" onClick={onOpenAvailability}>
           Ver una juntada de ejemplo <ChevronRight size={17} />
         </button>
       )}
-    </section>
+    </m.section>
   );
 }
 
 type MobileBottomNavProps = {
+  activeSection: AppSection;
   purchaseEnabled: boolean;
   onHome(): void;
   onAvailability(): void;
@@ -144,6 +193,7 @@ type MobileBottomNavProps = {
 };
 
 export function MobileBottomNav({
+  activeSection,
   purchaseEnabled,
   onHome,
   onAvailability,
@@ -152,78 +202,190 @@ export function MobileBottomNav({
 }: MobileBottomNavProps) {
   return (
     <nav className="mobile-bottom-nav" aria-label="Navegación principal">
-      <button type="button" onClick={onHome}><Home size={19} /><span>Inicio</span></button>
-      <button type="button" onClick={onAvailability}><CalendarDays size={19} /><span>Horarios</span></button>
-      <button type="button" className={!purchaseEnabled ? "locked" : ""} onClick={onPurchase}>
+      <button type="button" className={activeSection === "home" ? "active" : ""} onClick={onHome}>
+        {activeSection === "home" ? <m.span className="mobile-nav-indicator" layoutId="mobile-nav-indicator" /> : null}
+        <Home size={19} /><span>Inicio</span>
+      </button>
+      <button type="button" className={activeSection === "availability" ? "active" : ""} onClick={onAvailability}>
+        {activeSection === "availability" ? <m.span className="mobile-nav-indicator" layoutId="mobile-nav-indicator" /> : null}
+        <CalendarDays size={19} /><span>Horarios</span>
+      </button>
+      <button
+        type="button"
+        className={`${!purchaseEnabled ? "locked" : ""} ${activeSection === "purchase" ? "active" : ""}`.trim()}
+        onClick={onPurchase}
+      >
+        {activeSection === "purchase" ? <m.span className="mobile-nav-indicator" layoutId="mobile-nav-indicator" /> : null}
         <ShoppingBasket size={19} /><span>Compra</span>
       </button>
-      <button type="button" onClick={onMore}><MoreHorizontal size={19} /><span>Más</span></button>
+      <button type="button" className={activeSection === "more" ? "active" : ""} onClick={onMore}>
+        {activeSection === "more" ? <m.span className="mobile-nav-indicator" layoutId="mobile-nav-indicator" /> : null}
+        <MoreHorizontal size={19} /><span>Más</span>
+      </button>
     </nav>
   );
 }
 
-type PurchaseItem = {
-  id: string;
-  label: string;
-  unit: string;
-  quantity: number;
-  category: "food" | "drinks" | "other" | "alcohol";
-};
+const purchaseCatalog: Array<
+  Omit<PurchaseItem, "quantity" | "suggestedQuantity">
+  & { suggest(people: number): number }
+> = [
+  { key: "meat", label: "Carne", unit: "kg", category: "food", position: 0, suggest: (people) => Math.max(1, Math.ceil(people * 0.45)) },
+  { key: "bread", label: "Pan", unit: "bolsas", category: "food", position: 1, suggest: (people) => Math.max(1, Math.ceil(people / 4)) },
+  { key: "salad", label: "Ensalada", unit: "fuentes", category: "food", position: 2, suggest: (people) => Math.max(1, Math.ceil(people / 3)) },
+  { key: "soda", label: "Gaseosas", unit: "botellas de 2 L", category: "drinks", position: 3, suggest: (people) => Math.max(1, Math.ceil(people / 2)) },
+  { key: "water", label: "Agua", unit: "botellas de 2 L", category: "drinks", position: 4, suggest: (people) => Math.max(1, Math.ceil(people / 3)) },
+  { key: "ice", label: "Hielo", unit: "bolsas", category: "other", position: 5, suggest: (people) => Math.max(1, Math.ceil(people / 3)) },
+  { key: "charcoal", label: "Carbón", unit: "bolsas", category: "other", position: 6, suggest: (people) => Math.max(1, Math.ceil(people / 4)) },
+  { key: "beer", label: "Cerveza", unit: "litros", category: "alcohol", position: 7, suggest: (people) => Math.max(1, people) },
+];
 
-type PurchaseState = {
-  items: PurchaseItem[];
-  includeAlcohol: boolean;
-  ageConfirmed: boolean;
-};
+function createSuggestedPlan(participantCount: number): PurchasePlan {
+  return {
+    id: null,
+    persisted: false,
+    includeAlcohol: false,
+    ageConfirmed: false,
+    participantCount,
+    participantBaseline: participantCount,
+    updatedAt: null,
+    items: purchaseCatalog.map(({ suggest, ...item }) => {
+      const quantity = suggest(participantCount);
+      return { ...item, quantity, suggestedQuantity: quantity };
+    }),
+  };
+}
 
-const defaultPurchaseState: PurchaseState = {
-  includeAlcohol: false,
-  ageConfirmed: false,
-  items: [
-    { id: "meat", label: "Carne", unit: "kg", quantity: 3, category: "food" },
-    { id: "bread", label: "Pan", unit: "bolsas", quantity: 2, category: "food" },
-    { id: "salad", label: "Ensalada", unit: "fuentes", quantity: 2, category: "food" },
-    { id: "soda", label: "Gaseosas", unit: "botellas", quantity: 4, category: "drinks" },
-    { id: "water", label: "Agua", unit: "botellas", quantity: 3, category: "drinks" },
-    { id: "ice", label: "Hielo", unit: "bolsas", quantity: 2, category: "other" },
-    { id: "charcoal", label: "Carbón", unit: "bolsas", quantity: 2, category: "other" },
-    { id: "beer", label: "Cerveza", unit: "litros", quantity: 6, category: "alcohol" },
-  ],
-};
-
-function readPurchaseState(storageKey: string) {
-  if (typeof window === "undefined") return defaultPurchaseState;
+function readPurchasePlan(storageKey: string, participantCount: number) {
+  const fallback = createSuggestedPlan(participantCount);
+  if (typeof window === "undefined") return fallback;
   try {
     const stored = window.localStorage.getItem(storageKey);
-    return stored ? JSON.parse(stored) as PurchaseState : defaultPurchaseState;
+    return stored ? { ...fallback, ...JSON.parse(stored) as PurchasePlan } : fallback;
   } catch {
-    return defaultPurchaseState;
+    return fallback;
   }
 }
 
 type PurchasePlannerProps = {
   gatheringKey: string;
+  gatheringId?: string;
+  participantId?: string;
+  participantToken?: string;
+  canEdit?: boolean;
+  remoteRevision?: number;
   participantCount: number;
   onNotice(message: string): void;
 };
 
-export function PurchasePlanner({ gatheringKey, participantCount, onNotice }: PurchasePlannerProps) {
-  const storageKey = `sale-juntada:purchase:${gatheringKey}`;
-  const [purchase, setPurchase] = useState<PurchaseState>(() => readPurchaseState(storageKey));
+export function PurchasePlanner({
+  gatheringKey,
+  gatheringId,
+  participantId,
+  participantToken,
+  canEdit = false,
+  remoteRevision = 0,
+  participantCount,
+  onNotice,
+}: PurchasePlannerProps) {
+  const storageKey = `sale-juntada:purchase:v2:${gatheringKey}`;
+  const [purchase, setPurchase] = useState<PurchasePlan>(() =>
+    readPurchasePlan(storageKey, participantCount),
+  );
+  const [isLoading, setIsLoading] = useState(Boolean(gatheringId));
+  const [isSaving, setIsSaving] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
+  const editVersionRef = useRef(0);
+  const noticeRef = useRef(onNotice);
+  const editable = !gatheringId || canEdit;
 
   useEffect(() => {
+    noticeRef.current = onNotice;
+  }, [onNotice]);
+
+  useEffect(() => {
+    if (gatheringId) return;
     window.localStorage.setItem(storageKey, JSON.stringify(purchase));
-  }, [purchase, storageKey]);
+  }, [gatheringId, purchase, storageKey]);
+
+  useEffect(() => {
+    if (!gatheringId) return;
+    let cancelled = false;
+    gatheringService.getPurchasePlan(gatheringId)
+      .then((plan) => {
+        if (cancelled) return;
+        setPurchase(plan);
+        setIsDirty(false);
+      })
+      .catch(() => {
+        if (!cancelled) noticeRef.current("No pudimos actualizar la compra compartida.");
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [gatheringId, participantCount, remoteRevision]);
+
+  useEffect(() => {
+    if (
+      !gatheringId ||
+      !participantId ||
+      !participantToken ||
+      !canEdit ||
+      !isDirty
+    ) return;
+    const version = editVersionRef.current;
+    const timeout = window.setTimeout(() => {
+      setIsSaving(true);
+      gatheringService.updatePurchasePlan(
+        gatheringId,
+        participantId,
+        participantToken,
+        {
+          includeAlcohol: purchase.includeAlcohol,
+          ageConfirmed: purchase.ageConfirmed,
+          items: purchase.items.map(({ key, quantity }) => ({ key, quantity })),
+        },
+      )
+        .then((saved) => {
+          if (editVersionRef.current !== version) return;
+          setPurchase(saved);
+          setIsDirty(false);
+        })
+        .catch(() => noticeRef.current("No pudimos guardar la compra. Tus cambios siguen visibles."))
+        .finally(() => setIsSaving(false));
+    }, 500);
+    return () => window.clearTimeout(timeout);
+  }, [
+    canEdit,
+    gatheringId,
+    isDirty,
+    participantId,
+    participantToken,
+    purchase,
+  ]);
+
+  const updatePurchase = (update: (current: PurchasePlan) => PurchasePlan) => {
+    if (!editable) {
+      onNotice("Sólo quien organiza puede editar la compra.");
+      return;
+    }
+    editVersionRef.current += 1;
+    setPurchase(update);
+    setIsDirty(Boolean(gatheringId));
+  };
 
   const visibleItems = useMemo(
     () => purchase.items.filter((item) => item.category !== "alcohol" || purchase.includeAlcohol),
     [purchase],
   );
 
-  const changeQuantity = (id: string, delta: number) => {
-    setPurchase((current) => ({
+  const changeQuantity = (key: string, delta: number) => {
+    updatePurchase((current) => ({
       ...current,
-      items: current.items.map((item) => item.id === id
+      items: current.items.map((item) => item.key === key
         ? { ...item, quantity: Math.max(0, item.quantity + delta) }
         : item),
     }));
@@ -248,14 +410,30 @@ export function PurchasePlanner({ gatheringKey, participantCount, onNotice }: Pu
   };
 
   return (
-    <section className="purchase-planner" id="compra" aria-labelledby="purchase-title">
+    <m.section
+      className="purchase-planner"
+      id="compra"
+      aria-labelledby="purchase-title"
+      initial={{ opacity: 0, y: 18 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, amount: 0.12 }}
+      transition={standardTransition}
+    >
       <div className="purchase-heading">
         <div>
           <span className="section-kicker">DESPUÉS DEL MATCH</span>
           <h2 id="purchase-title">Armemos la compra.</h2>
-          <p>Una base editable para {participantCount} personas. Las cantidades quedan guardadas en este dispositivo.</p>
+          <p>
+            Una base sugerida para {participantCount} personas.
+            {gatheringId ? " Se sincroniza con todo el grupo." : " En la demo queda guardada en este dispositivo."}
+          </p>
         </div>
-        <span className="purchase-status"><Check size={15} /> Fecha cerrada</span>
+        <div className="purchase-statuses">
+          <span className="purchase-status"><Check size={15} /> Fecha cerrada</span>
+          <span className={`purchase-sync ${isSaving ? "saving" : ""}`}>
+            {isLoading ? "Cargando…" : isSaving ? "Guardando…" : editable ? "Sincronizada" : "Sólo lectura"}
+          </span>
+        </div>
       </div>
 
       <div className="purchase-layout">
@@ -264,21 +442,42 @@ export function PurchasePlanner({ gatheringKey, participantCount, onNotice }: Pu
             <div><ShoppingBasket size={21} /><strong>Lista sugerida</strong></div>
             <small>{visibleItems.filter((item) => item.quantity > 0).length} productos</small>
           </div>
-          <div className="purchase-items">
+          <m.div className="purchase-items" variants={listVariants} initial="hidden" animate="visible">
+            <AnimatePresence initial={false}>
             {visibleItems.map((item) => (
-              <div className="purchase-item" key={item.id}>
+              <m.div
+                className="purchase-item"
+                key={item.key}
+                layout
+                variants={listItemVariants}
+                initial="hidden"
+                animate="visible"
+                exit="exit"
+              >
                 <span className={`purchase-item-icon ${item.category}`}>
                   {item.category === "drinks" || item.category === "alcohol" ? <GlassWater size={18} /> : <ShoppingBasket size={18} />}
                 </span>
-                <div><strong>{item.label}</strong><small>{item.unit}</small></div>
-                <div className="quantity-stepper" aria-label={`Cantidad de ${item.label}`}>
-                  <button type="button" onClick={() => changeQuantity(item.id, -1)} aria-label={`Quitar ${item.label}`}><Minus size={14} /></button>
-                  <b>{item.quantity}</b>
-                  <button type="button" onClick={() => changeQuantity(item.id, 1)} aria-label={`Agregar ${item.label}`}><Plus size={14} /></button>
+                <div>
+                  <strong>{item.label}</strong>
+                  <small>{item.unit} · sugerido {item.suggestedQuantity}</small>
                 </div>
-              </div>
+                <div className="quantity-stepper" aria-label={`Cantidad de ${item.label}`}>
+                  <m.button type="button" whileTap={{ scale: 0.86 }} disabled={!editable} onClick={() => changeQuantity(item.key, -1)} aria-label={`Quitar ${item.label}`}><Minus size={14} /></m.button>
+                  <AnimatePresence mode="popLayout" initial={false}>
+                    <m.b
+                      key={`${item.key}-${item.quantity}`}
+                      initial={{ opacity: 0, y: -6, scale: 0.85 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 6, scale: 0.85 }}
+                      transition={quickTransition}
+                    >{item.quantity}</m.b>
+                  </AnimatePresence>
+                  <m.button type="button" whileTap={{ scale: 0.86 }} disabled={!editable} onClick={() => changeQuantity(item.key, 1)} aria-label={`Agregar ${item.label}`}><Plus size={14} /></m.button>
+                </div>
+              </m.div>
             ))}
-          </div>
+            </AnimatePresence>
+          </m.div>
 
           <div className="alcohol-option">
             <div>
@@ -290,19 +489,29 @@ export function PurchasePlanner({ gatheringKey, participantCount, onNotice }: Pu
               role="switch"
               aria-checked={purchase.includeAlcohol}
               className={purchase.includeAlcohol ? "active" : ""}
-              onClick={() => setPurchase((current) => ({ ...current, includeAlcohol: !current.includeAlcohol, ageConfirmed: false }))}
+              disabled={!editable}
+              onClick={() => updatePurchase((current) => ({ ...current, includeAlcohol: !current.includeAlcohol, ageConfirmed: false }))}
             ><span /></button>
           </div>
-          {purchase.includeAlcohol && (
-            <label className="age-confirmation">
+          <AnimatePresence initial={false}>
+          {purchase.includeAlcohol ? (
+            <m.label
+              className="age-confirmation"
+              initial={{ opacity: 0, height: 0, y: -6 }}
+              animate={{ opacity: 1, height: "auto", y: 0 }}
+              exit={{ opacity: 0, height: 0, y: -6 }}
+              transition={standardTransition}
+            >
               <input
                 type="checkbox"
                 checked={purchase.ageConfirmed}
-                onChange={(event) => setPurchase((current) => ({ ...current, ageConfirmed: event.target.checked }))}
+                disabled={!editable}
+                onChange={(event) => updatePurchase((current) => ({ ...current, ageConfirmed: event.target.checked }))}
               />
               La compra y recepción será gestionada por una persona mayor de 18 años.
-            </label>
-          )}
+            </m.label>
+          ) : null}
+          </AnimatePresence>
           <button type="button" className="share-purchase-button" onClick={shareList}>
             <Share2 size={18} /> Compartir lista
           </button>
@@ -322,6 +531,6 @@ export function PurchasePlanner({ gatheringKey, participantCount, onNotice }: Pu
           <em>El MVP no recomienda ni procesa la compra.</em>
         </aside>
       </div>
-    </section>
+    </m.section>
   );
 }

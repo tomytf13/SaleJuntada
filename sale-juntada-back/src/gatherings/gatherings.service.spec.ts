@@ -155,3 +155,102 @@ describe("GatheringsService expense settlement", () => {
     ]);
   });
 });
+
+describe("GatheringsService purchase plan", () => {
+  it("calcula sugerencias según la cantidad actual de participantes", async () => {
+    const prisma = {
+      gathering: {
+        findUnique: jest.fn().mockResolvedValue({
+          _count: { participants: 10 },
+          purchasePlan: null,
+        }),
+      },
+    } as unknown as PrismaService;
+    const service = new GatheringsService(prisma);
+
+    const result = await service.getPurchasePlan("gathering");
+
+    expect(result.persisted).toBe(false);
+    expect(result.participantCount).toBe(10);
+    expect(result.items.find((item) => item.key === "meat")?.quantity).toBe(5);
+    expect(result.items.find((item) => item.key === "beer")?.quantity).toBe(10);
+  });
+
+  it("impide que una persona invitada edite la compra", async () => {
+    const prisma = {
+      participant: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: "guest",
+          responseToken: "token",
+          isOrganizer: false,
+          gathering: { _count: { participants: 6 } },
+        }),
+      },
+    } as unknown as PrismaService;
+    const service = new GatheringsService(prisma);
+
+    await expect(
+      service.updatePurchasePlan("gathering", "guest", "token", {
+        includeAlcohol: false,
+        ageConfirmed: false,
+        items: [],
+      }),
+    ).rejects.toThrow("Sólo quien organiza puede editar la compra");
+  });
+
+  it("guarda el catálogo validado y la confirmación de adulto", async () => {
+    const savedAt = new Date();
+    const purchaseItem = { upsert: jest.fn().mockResolvedValue({}) };
+    const purchasePlan = {
+      upsert: jest.fn().mockResolvedValue({ id: "plan" }),
+      findUniqueOrThrow: jest.fn().mockResolvedValue({
+        id: "plan",
+        includeAlcohol: true,
+        ageConfirmed: true,
+        participantBaseline: 6,
+        updatedAt: savedAt,
+        items: [
+          {
+            key: "meat",
+            label: "Carne",
+            unit: "kg",
+            quantity: 4,
+            category: "FOOD",
+            position: 0,
+          },
+        ],
+      }),
+    };
+    const prisma = {
+      participant: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: "organizer",
+          responseToken: "token",
+          isOrganizer: true,
+          gathering: { _count: { participants: 6 } },
+        }),
+      },
+      $transaction: jest.fn((callback) => callback({ purchasePlan, purchaseItem })),
+    } as unknown as PrismaService;
+    const service = new GatheringsService(prisma);
+
+    const result = await service.updatePurchasePlan(
+      "gathering",
+      "organizer",
+      "token",
+      {
+        includeAlcohol: true,
+        ageConfirmed: true,
+        items: [{ key: "meat", quantity: 4 }],
+      },
+    );
+
+    expect(purchaseItem.upsert).toHaveBeenCalledTimes(8);
+    expect(purchasePlan.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ ageConfirmed: true }),
+      }),
+    );
+    expect(result.items.find((item) => item.key === "meat")?.quantity).toBe(4);
+  });
+});

@@ -28,56 +28,65 @@ enum ProposalStatus {
   REJECTED
 }
 
+enum PurchaseCategory {
+  FOOD
+  DRINKS
+  OTHER
+  ALCOHOL
+}
+
 model Gathering {
-  id                String          @id @default(cuid())
-  slug              String          @unique
-  title             String
-  description       String?
-  locationHint      String?
-  locationLatitude  Float?
-  locationLongitude Float?
-  organizerName     String
-  windowStart       DateTime
-  windowEnd         DateTime
-  durationMinutes   Int             @default(180)
-  dailyStartMinutes Int             @default(780)
-  dailyEndMinutes   Int             @default(1440)
-  slotStepMinutes   Int             @default(480)
-  status            GatheringStatus @default(OPEN)
-  finalizedStart    DateTime?
-  finalizedEnd      DateTime?
-  finalizedLocation String?
-  expenseRound       Int             @default(1)
-  participants      Participant[]
-  proposals         Proposal[]
-  expenses          Expense[]
+  id                    String                 @id @default(cuid())
+  slug                  String                 @unique
+  title                 String
+  description           String?
+  locationHint          String?
+  locationLatitude      Float?
+  locationLongitude     Float?
+  organizerName         String
+  windowStart           DateTime
+  windowEnd             DateTime
+  durationMinutes       Int                    @default(180)
+  dailyStartMinutes     Int                    @default(780)
+  dailyEndMinutes       Int                    @default(1440)
+  slotStepMinutes       Int                    @default(480)
+  status                GatheringStatus        @default(OPEN)
+  finalizedStart        DateTime?
+  finalizedEnd          DateTime?
+  finalizedLocation     String?
+  expenseRound          Int                    @default(1)
+  participants          Participant[]
+  proposals             Proposal[]
+  expenses              Expense[]
   transferConfirmations TransferConfirmation[]
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
+  purchasePlan          PurchasePlan?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
 
   @@index([status, windowStart])
 }
 
 model Participant {
-  id             String         @id @default(cuid())
-  gatheringId    String
-  gathering      Gathering      @relation(fields: [gatheringId], references: [id], onDelete: Cascade)
-  name           String
-  contact        String?
-  avatarUrl      String?
-  googleSubject  String?
-  isOrganizer    Boolean        @default(false)
-  responseToken  String         @unique @default(cuid())
-  expensesReadyAt DateTime?
-  availabilities Availability[]
-  expensesPaid   Expense[]
-  transfersSent  TransferConfirmation[] @relation("TransferFrom")
-  transfersReceived TransferConfirmation[] @relation("TransferTo")
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  id                   String                 @id @default(cuid())
+  gatheringId          String
+  gathering            Gathering              @relation(fields: [gatheringId], references: [id], onDelete: Cascade)
+  name                 String
+  contact              String?
+  avatarUrl            String?
+  googleSubject        String?
+  isOrganizer          Boolean                @default(false)
+  responseToken        String                 @unique @default(cuid())
+  expensesReadyAt      DateTime?
+  availabilities       Availability[]
+  expensesPaid         Expense[]
+  transfersSent        TransferConfirmation[] @relation("TransferFrom")
+  transfersReceived    TransferConfirmation[] @relation("TransferTo")
+  purchasePlansUpdated PurchasePlan[]         @relation("PurchasePlanUpdatedBy")
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
 
-  @@index([gatheringId])
   @@unique([gatheringId, googleSubject])
+  @@index([gatheringId])
 }
 
 model Availability {
@@ -141,4 +150,37 @@ model Proposal {
   updatedAt        DateTime       @updatedAt
 
   @@index([gatheringId, score])
+}
+
+model PurchasePlan {
+  id                     String         @id @default(cuid())
+  gatheringId            String         @unique
+  gathering              Gathering      @relation(fields: [gatheringId], references: [id], onDelete: Cascade)
+  includeAlcohol         Boolean        @default(false)
+  ageConfirmed           Boolean        @default(false)
+  participantBaseline    Int            @default(1)
+  updatedByParticipantId String?
+  updatedBy              Participant?   @relation("PurchasePlanUpdatedBy", fields: [updatedByParticipantId], references: [id], onDelete: SetNull)
+  items                  PurchaseItem[]
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
+
+  @@index([updatedByParticipantId])
+}
+
+model PurchaseItem {
+  id             String           @id @default(cuid())
+  purchasePlanId String
+  purchasePlan   PurchasePlan     @relation(fields: [purchasePlanId], references: [id], onDelete: Cascade)
+  key            String
+  label          String
+  unit           String
+  quantity       Int
+  category       PurchaseCategory
+  position       Int              @default(0)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@unique([purchasePlanId, key])
+  @@index([purchasePlanId, position])
 }

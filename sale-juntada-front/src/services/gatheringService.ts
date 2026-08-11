@@ -127,6 +127,27 @@ export type ExpenseSettlement = {
   }>;
 };
 
+export type PurchaseItem = {
+  key: string;
+  label: string;
+  unit: string;
+  quantity: number;
+  suggestedQuantity: number;
+  category: "food" | "drinks" | "other" | "alcohol";
+  position: number;
+};
+
+export type PurchasePlan = {
+  id: string | null;
+  persisted: boolean;
+  includeAlcohol: boolean;
+  ageConfirmed: boolean;
+  participantCount: number;
+  participantBaseline: number;
+  updatedAt: string | null;
+  items: PurchaseItem[];
+};
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
     ...init,
@@ -204,6 +225,28 @@ export const gatheringService = {
 
   getMatches(gatheringId: string) {
     return request<Match[]>(`/gatherings/${gatheringId}/matches`);
+  },
+
+  getPurchasePlan(gatheringId: string) {
+    return request<PurchasePlan>(`/gatherings/${gatheringId}/purchase`);
+  },
+
+  updatePurchasePlan(
+    gatheringId: string,
+    participantId: string,
+    participantToken: string,
+    input: Pick<PurchasePlan, "includeAlcohol" | "ageConfirmed"> & {
+      items: Array<Pick<PurchaseItem, "key" | "quantity">>;
+    },
+  ) {
+    return request<PurchasePlan>(
+      `/gatherings/${gatheringId}/participants/${participantId}/purchase`,
+      {
+        method: "PUT",
+        headers: { "x-participant-token": participantToken },
+        body: JSON.stringify(input),
+      },
+    );
   },
 
   addExpense(

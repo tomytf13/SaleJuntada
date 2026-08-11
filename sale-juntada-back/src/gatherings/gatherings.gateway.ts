@@ -126,6 +126,10 @@ export class GatheringsGateway implements OnGatewayDisconnect {
     });
   }
 
+  purchaseChanged(gatheringId: string) {
+    this.server.to(this.room(gatheringId)).emit("purchase:changed");
+  }
+
   private broadcastPresence(gatheringId: string) {
     const uniqueMembers = new Map<string, LiveMember>();
     for (const member of this.members.values()) {

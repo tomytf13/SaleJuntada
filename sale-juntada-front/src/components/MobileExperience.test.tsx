@@ -1,10 +1,27 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   MobileDashboard,
   PurchasePlanner,
 } from "./MobileExperience";
+import { gatheringService, type PurchasePlan } from "../services/gatheringService";
+
+const sharedPlan: PurchasePlan = {
+  id: "plan",
+  persisted: true,
+  includeAlcohol: false,
+  ageConfirmed: false,
+  participantCount: 6,
+  participantBaseline: 6,
+  updatedAt: "2026-08-11T00:00:00.000Z",
+  items: [
+    { key: "meat", label: "Carne", unit: "kg", quantity: 3, suggestedQuantity: 3, category: "food", position: 0 },
+    { key: "beer", label: "Cerveza", unit: "litros", quantity: 6, suggestedQuantity: 6, category: "alcohol", position: 1 },
+  ],
+};
+
+afterEach(cleanup);
 
 describe("MobileDashboard", () => {
   it("connects the active gathering summary with the real actions", () => {
@@ -47,6 +64,7 @@ describe("MobileDashboard", () => {
 
 describe("PurchasePlanner", () => {
   beforeEach(() => {
+    vi.restoreAllMocks();
     window.localStorage.clear();
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
@@ -75,5 +93,78 @@ describe("PurchasePlanner", () => {
     fireEvent.click(screen.getByRole("button", { name: /compartir lista/i }));
 
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(expect.stringContaining("Cerveza"));
+  });
+
+  it("calcula la sugerencia inicial usando el tamaño del grupo", () => {
+    render(
+      <PurchasePlanner
+        gatheringKey="dynamic-demo"
+        participantCount={10}
+        onNotice={vi.fn()}
+      />,
+    );
+
+    const meatRow = screen
+      .getByText("Carne")
+      .closest(".purchase-item") as HTMLElement | null;
+    expect(meatRow).not.toBeNull();
+    expect(within(meatRow!).getByText(/sugerido 5/i)).toBeInTheDocument();
+  });
+
+  it("deja la compra compartida en modo lectura para invitados", async () => {
+    vi.spyOn(gatheringService, "getPurchasePlan").mockResolvedValue(sharedPlan);
+
+    render(
+      <PurchasePlanner
+        gatheringKey="gathering"
+        gatheringId="gathering"
+        participantId="guest"
+        participantToken="token"
+        participantCount={6}
+        canEdit={false}
+        onNotice={vi.fn()}
+      />,
+    );
+
+    await screen.findByText("Sólo lectura");
+    expect(screen.getByRole("button", { name: /agregar carne/i })).toBeDisabled();
+    expect(screen.getByRole("switch")).toBeDisabled();
+  });
+
+  it("sincroniza los cambios del organizador después del debounce", async () => {
+    vi.spyOn(gatheringService, "getPurchasePlan").mockResolvedValue(sharedPlan);
+    const update = vi
+      .spyOn(gatheringService, "updatePurchasePlan")
+      .mockResolvedValue({
+        ...sharedPlan,
+        items: sharedPlan.items.map((item) =>
+          item.key === "meat" ? { ...item, quantity: 4 } : item,
+        ),
+      });
+
+    render(
+      <PurchasePlanner
+        gatheringKey="gathering"
+        gatheringId="gathering"
+        participantId="organizer"
+        participantToken="token"
+        participantCount={6}
+        canEdit
+        onNotice={vi.fn()}
+      />,
+    );
+
+    await screen.findByText("Sincronizada");
+    fireEvent.click(screen.getByRole("button", { name: /agregar carne/i }));
+
+    await waitFor(() => expect(update).toHaveBeenCalledOnce(), { timeout: 1_500 });
+    expect(update).toHaveBeenCalledWith(
+      "gathering",
+      "organizer",
+      "token",
+      expect.objectContaining({
+        items: expect.arrayContaining([{ key: "meat", quantity: 4 }]),
+      }),
+    );
   });
 });

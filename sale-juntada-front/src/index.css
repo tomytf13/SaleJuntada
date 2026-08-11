@@ -79,6 +79,50 @@ button {
   gap: 10px;
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.connection-status {
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid #d8ddd2;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--ink-soft);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.2px;
+}
+
+.connection-status i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #c48645;
+}
+
+.connection-status.connected {
+  border-color: #d3dfa2;
+  color: #596916;
+}
+
+.connection-status.connected i {
+  background: #829716;
+  box-shadow: 0 0 0 3px rgba(130, 151, 22, 0.13);
+}
+
 .icon-button,
 .avatar-button {
   border: 0;
@@ -513,6 +557,29 @@ button {
   align-items: center;
   gap: 16px;
   box-shadow: 0 7px 0 rgba(24, 43, 40, 0.12);
+  position: relative;
+}
+
+.confirmation-burst {
+  position: absolute;
+  top: 8px;
+  left: 48px;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+}
+
+.confirmation-burst i {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: var(--lime);
+}
+
+.confirmation-burst i:nth-child(even) {
+  background: var(--coral);
+  border-radius: 50%;
 }
 
 .status-banner {
@@ -1464,15 +1531,27 @@ footer > span {
   font-size: 11px;
 }
 
-.modal-backdrop {
+.modal-root {
   position: fixed;
   inset: 0;
   z-index: 50;
-  padding: 20px;
+}
+
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
   background: rgba(13, 29, 26, 0.62);
   backdrop-filter: blur(6px);
+}
+
+.modal-positioner {
+  position: fixed;
+  inset: 0;
+  padding: 20px;
   display: grid;
   place-items: center;
+  overflow: hidden;
+  pointer-events: none;
 }
 
 .create-sheet,
@@ -1485,16 +1564,11 @@ footer > span {
   border-radius: 24px;
   box-shadow: 0 24px 80px rgba(10, 24, 21, 0.35);
   position: relative;
-  animation: enter 220ms ease-out;
+  pointer-events: auto;
 }
 
 .results-sheet {
   width: min(690px, 100%);
-}
-
-@keyframes enter {
-  from { opacity: 0; transform: translateY(14px) scale(0.98); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .close-button {
@@ -1680,6 +1754,18 @@ footer > span {
 .location-builder .schedule-heading > span {
   background: #e9f2bc;
   color: var(--ink);
+}
+
+.map-loading {
+  min-height: 260px;
+  border: 1px dashed #cdd4c8;
+  border-radius: 15px;
+  background: #f8f8f2;
+  color: var(--ink-soft);
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 800;
 }
 
 .location-picker {
@@ -2299,10 +2385,15 @@ footer > span {
 
   .create-sheet,
   .results-sheet {
-    max-height: none;
-    overflow: visible;
+    max-height: calc(100dvh - 16px);
+    overflow-y: auto;
     padding: 27px 20px 23px;
     border-radius: 20px;
+  }
+
+  .modal-positioner {
+    padding: 8px;
+    align-items: end;
   }
 
   .form-row {
@@ -2406,6 +2497,31 @@ footer > span {
   gap: 6px;
   font-size: 10px;
   font-weight: 900;
+}
+
+.purchase-statuses {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.purchase-sync {
+  padding: 9px 12px;
+  border: 1px solid #d8ddd2;
+  border-radius: 999px;
+  background: white;
+  color: var(--ink-soft);
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.purchase-sync.saving {
+  border-color: #d9dfab;
+  background: #f6fad9;
+  color: #596916;
 }
 
 .purchase-layout {
@@ -2535,6 +2651,12 @@ footer > span {
   cursor: pointer;
 }
 
+.quantity-stepper button:disabled,
+.alcohol-option > button[role="switch"]:disabled {
+  cursor: not-allowed;
+  opacity: 0.46;
+}
+
 .quantity-stepper b {
   font-size: 12px;
 }
@@ -2585,6 +2707,7 @@ footer > span {
   gap: 9px;
   font-size: 10px;
   line-height: 1.45;
+  overflow: hidden;
 }
 
 .age-confirmation input {
@@ -3001,10 +3124,26 @@ footer > span {
     cursor: pointer;
     font-size: 8px;
     font-weight: 800;
+    position: relative;
+    isolation: isolate;
   }
 
-  .mobile-bottom-nav button:first-child {
+  .mobile-bottom-nav button > svg,
+  .mobile-bottom-nav button > span:not(.mobile-nav-indicator) {
+    position: relative;
+    z-index: 1;
+  }
+
+  .mobile-bottom-nav button.active {
     color: #607015;
+  }
+
+  .mobile-nav-indicator {
+    position: absolute;
+    z-index: 0;
+    inset: 2px 9px;
+    border-radius: 13px;
+    background: #eef6c7;
   }
 
   .mobile-bottom-nav button.locked {
@@ -3020,6 +3159,10 @@ footer > span {
     align-items: flex-start;
     flex-direction: column;
     gap: 14px;
+  }
+
+  .purchase-statuses {
+    justify-content: flex-start;
   }
 
   .purchase-heading h2 {

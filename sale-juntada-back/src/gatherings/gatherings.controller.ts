@@ -6,6 +6,7 @@ import { ConfirmTransferDto } from "./dto/confirm-transfer.dto";
 import { CreateGatheringDto } from "./dto/create-gathering.dto";
 import { GoogleParticipantDto } from "./dto/google-participant.dto";
 import { SetAvailabilityDto } from "./dto/set-availability.dto";
+import { UpdatePurchasePlanDto } from "./dto/update-purchase-plan.dto";
 import { GatheringsGateway } from "./gatherings.gateway";
 import { GatheringsService } from "./gatherings.service";
 
@@ -61,6 +62,28 @@ export class GatheringsController {
   @Get(":gatheringId/matches")
   getMatches(@Param("gatheringId") gatheringId: string) {
     return this.gatheringsService.getMatches(gatheringId);
+  }
+
+  @Get(":gatheringId/purchase")
+  getPurchasePlan(@Param("gatheringId") gatheringId: string) {
+    return this.gatheringsService.getPurchasePlan(gatheringId);
+  }
+
+  @Put(":gatheringId/participants/:participantId/purchase")
+  async updatePurchasePlan(
+    @Param("gatheringId") gatheringId: string,
+    @Param("participantId") participantId: string,
+    @Headers("x-participant-token") participantToken: string | undefined,
+    @Body() dto: UpdatePurchasePlanDto,
+  ) {
+    const plan = await this.gatheringsService.updatePurchasePlan(
+      gatheringId,
+      participantId,
+      participantToken,
+      dto,
+    );
+    this.gatheringsGateway.purchaseChanged(gatheringId);
+    return plan;
   }
 
   @Post(":gatheringId/participants/:participantId/expenses")

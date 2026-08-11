@@ -323,6 +323,10 @@ test("carga un gasto y calcula quién transfiere a quién", async ({ page }) => 
   await page.goto("/j/pizza-del-sabado-g7h8i9");
   await page.getByLabel("Tu nombre").fill("Sofi");
   await page.getByRole("button", { name: /Entrar y marcar horarios/i }).click();
+  await expect(page.getByText("Sofi (vos)")).toBeVisible();
+  await expect(
+    page.getByRole("dialog", { name: /Sumarse a Pizza del sábado/i }),
+  ).toBeHidden();
 
   await page.getByLabel("Concepto").fill("Pizzas");
   await page.getByLabel("Monto").fill("12000");
@@ -335,4 +339,135 @@ test("carga un gasto y calcula quién transfiere a quién", async ({ page }) => 
   await expect(transfer.getByText("Tomás")).toBeVisible();
   await expect(transfer.getByText(/le transfiere a Sofi/i)).toBeVisible();
   await expect(transfer.getByText(/60,00/)).toBeVisible();
+});
+
+test("mantiene los diálogos accesibles con movimiento reducido", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/");
+
+  await page.getByRole("button", { name: /Crear una juntada/i }).click();
+  await expect(
+    page.getByRole("dialog", { name: "Crear una juntada" }),
+  ).toBeVisible();
+
+  await page.keyboard.press("Escape");
+  await expect(
+    page.getByRole("dialog", { name: "Crear una juntada" }),
+  ).toBeHidden();
+});
+
+test("el organizador edita y sincroniza la compra compartida", async ({
+  page,
+}) => {
+  const gathering = {
+    id: "gathering-purchase",
+    slug: "compra-compartida-j1k2l3",
+    title: "Asado con compra",
+    organizerName: "Tomás",
+    locationHint: "Yerba Buena",
+    windowStart: "2026-07-25T03:00:00.000Z",
+    windowEnd: "2026-07-28T02:59:59.000Z",
+    durationMinutes: 180,
+    participants: [
+      {
+        id: "organizer-purchase",
+        name: "Tomás",
+        isOrganizer: true,
+        availabilities: [],
+      },
+    ],
+    proposals: [],
+  };
+  const match = {
+    startsAt: "2026-07-26T00:00:00.000Z",
+    endsAt: "2026-07-26T03:00:00.000Z",
+    available: 1,
+    maybe: 0,
+    total: 1,
+    missing: 0,
+    score: 1,
+    explanation: "Pueden todos",
+    availableParticipantNames: ["Tomás"],
+    maybeParticipantNames: [],
+    missingParticipantNames: [],
+    pendingParticipantNames: [],
+    conflictParticipantNames: [],
+  };
+  const plan = {
+    id: null,
+    persisted: false,
+    includeAlcohol: false,
+    ageConfirmed: false,
+    participantCount: 1,
+    participantBaseline: 1,
+    updatedAt: null,
+    items: [
+      {
+        key: "meat",
+        label: "Carne",
+        unit: "kg",
+        quantity: 1,
+        suggestedQuantity: 1,
+        category: "food",
+        position: 0,
+      },
+    ],
+  };
+  let purchaseToken = "";
+  let meatQuantity = 0;
+
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      "sale-juntada:participant:gathering-purchase",
+      JSON.stringify({
+        participantId: "organizer-purchase",
+        responseToken: "organizer-purchase-token",
+      }),
+    );
+  });
+  await page.route("**/api/gatherings**", async (route) => {
+    const request = route.request();
+    if (request.url().includes("/expenses/settlement")) {
+      await route.fulfill({ status: 200, json: emptySettlement });
+      return;
+    }
+    if (request.url().includes("/matches")) {
+      await route.fulfill({ status: 200, json: [match] });
+      return;
+    }
+    if (request.url().endsWith("/purchase") && request.method() === "GET") {
+      await route.fulfill({ status: 200, json: plan });
+      return;
+    }
+    if (request.url().endsWith("/purchase") && request.method() === "PUT") {
+      purchaseToken = request.headers()["x-participant-token"];
+      const payload = request.postDataJSON() as {
+        items: Array<{ key: string; quantity: number }>;
+      };
+      meatQuantity = payload.items.find((item) => item.key === "meat")?.quantity ?? 0;
+      await route.fulfill({
+        status: 200,
+        json: {
+          ...plan,
+          id: "plan-purchase",
+          persisted: true,
+          items: plan.items.map((item) => ({ ...item, quantity: meatQuantity })),
+        },
+      });
+      return;
+    }
+    await route.fulfill({ status: 200, json: gathering });
+  });
+
+  await page.goto("/j/compra-compartida-j1k2l3");
+  await expect(page.getByText("Tomás (vos)")).toBeVisible();
+  await page.getByRole("button", { name: /Encontrar el mejor momento/i }).click();
+  await page.getByRole("button", { name: /Confirmar esta fecha/i }).click();
+  await expect(page.getByRole("heading", { name: /Armemos la compra/i })).toBeVisible();
+
+  await page.getByRole("button", { name: /Agregar Carne/i }).click();
+  await expect.poll(() => purchaseToken).toBe("organizer-purchase-token");
+  await expect.poll(() => meatQuantity).toBe(2);
 });
