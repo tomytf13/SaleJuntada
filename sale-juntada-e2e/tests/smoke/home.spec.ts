@@ -14,11 +14,42 @@ const emptySettlement = {
   completedTransfers: [],
 };
 
+test("abre una juntada sembrada desde PostgreSQL real", async ({ page, request }) => {
+  test.skip(
+    process.env.E2E_REAL_DB !== "1",
+    "Requiere npm run db:setup y el backend local en el puerto 3001.",
+  );
+
+  await page.goto("/j/asado-demo-tucuman");
+
+  await expect(
+    page.getByRole("heading", { name: "Asado demo en Tucumán" }).first(),
+  ).toBeVisible();
+  await expect(page.locator(".response-pill")).toHaveText("4/4 respondieron");
+
+  const gatheringResponse = await request.get(
+    "http://127.0.0.1:3001/api/gatherings/asado-demo-tucuman",
+  );
+  expect(gatheringResponse.ok()).toBeTruthy();
+  const gathering = await gatheringResponse.json() as { id: string };
+  const matchesResponse = await request.get(
+    `http://127.0.0.1:3001/api/gatherings/${gathering.id}/matches`,
+  );
+  expect(matchesResponse.ok()).toBeTruthy();
+  const matches = await matchesResponse.json() as Array<{
+    available: number;
+    total: number;
+  }>;
+  expect(matches[0]).toMatchObject({ available: 4, total: 4 });
+});
+
 test("permite elegir disponibilidad y buscar coincidencias", async ({ page }) => {
   await page.goto("/");
 
   await expect(
-    page.getByRole("heading", { name: /Que coincidir sea la parte fácil/i }),
+    page.getByRole("heading", {
+      name: /Hagamos que el plan salga|Que coincidir sea la parte fácil/i,
+    }),
   ).toBeVisible();
 
   await page.getByRole("button", { name: /Dom 26 Jul · 13:00/i }).click();
@@ -72,12 +103,12 @@ test("crea una juntada y abre su enlace compartible", async ({ page }) => {
   await page.getByRole("button", { name: /Crear una juntada/i }).click();
   await page.getByLabel("Nombre de la juntada").fill("Asado del viernes");
   await page.getByLabel("Tu nombre").fill("Tomás");
-  await page.getByLabel("Zona o lugar tentativo").fill("Yerba Buena");
+  await page.getByLabel(/Dirección o lugar/i).fill("Yerba Buena");
   await page.getByRole("button", { name: /Crear y elegir horarios/i }).click();
 
   await expect(page).toHaveURL(/\/j\/asado-del-viernes-a1b2c3$/);
   await expect(
-    page.getByRole("heading", { name: "Asado del viernes" }),
+    page.getByRole("heading", { name: "Asado del viernes" }).first(),
   ).toBeVisible();
   await expect(page.getByText(/Juntada creada/i)).toBeVisible();
 });

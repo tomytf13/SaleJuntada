@@ -2,7 +2,18 @@
   "name": "sale-juntada-back",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "overrides": {
+    "@nestjs/swagger": {
+      "js-yaml": "5.2.3"
+    }
+  },
   "scripts": {
+    "postinstall": "prisma generate",
+    "prestart": "prisma generate",
+    "prestart:dev": "prisma generate",
     "build": "npx prisma generate && npx nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
@@ -12,7 +23,12 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
+    "db:local:start": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/start-local-db.ps1",
+    "db:local:stop": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/stop-local-db.ps1",
+    "db:setup": "npm run db:local:start && npm run migrate:deploy && npm run prisma:seed",
+    "db:status": "prisma migrate status",
     "prisma:generate": "prisma generate",
+    "prisma:seed": "ts-node prisma/seed.ts",
     "prisma:migrate": "prisma migrate dev",
     "migrate:deploy": "prisma migrate deploy"
   },

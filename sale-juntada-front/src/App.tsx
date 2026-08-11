@@ -12,6 +12,11 @@ import {
   LocationPicker,
   SelectedLocation,
 } from "./components/LocationPicker";
+import {
+  MobileBottomNav,
+  MobileDashboard,
+  PurchasePlanner,
+} from "./components/MobileExperience";
 
 type Slot = {
   id: string;
@@ -1072,7 +1077,7 @@ export default function Home() {
   };
 
   return (
-    <main>
+    <main className="app-root">
       <header className="topbar">
         <a className="brand" href="#inicio" aria-label="Sale Juntada, inicio">
           <span className="brand-mark"><SparkIcon /></span>
@@ -1095,7 +1100,21 @@ export default function Home() {
         </div>
       </header>
 
-      <section className="hero" id="inicio">
+      <MobileDashboard
+        eventName={eventName}
+        location={location}
+        active={Boolean(activeGathering)}
+        selectedCount={yourSlots.length}
+        responseCount={activeGathering ? respondingParticipants : 6}
+        match={heroData}
+        confirmed={confirmed}
+        onCreate={() => setShowCreate(true)}
+        onShare={shareEvent}
+        onOpenAvailability={() => document.getElementById("disponibilidad")?.scrollIntoView({ behavior: "smooth" })}
+        onOpenResults={findBestMoment}
+      />
+
+      <section className="hero desktop-hero" id="inicio">
         <div className="hero-copy">
           <span className="eyebrow"><SparkIcon /> Coordinar sin vueltas</span>
           <h1>Que coincidir sea<br /><em>la parte fácil.</em></h1>
@@ -1341,6 +1360,17 @@ export default function Home() {
           <SparkIcon /> Encontrar el mejor momento
         </button>
         <p className="find-caption">Analizamos todas las disponibilidades y te damos las mejores opciones.</p>
+
+        {confirmed && (
+          <PurchasePlanner
+            gatheringKey={activeGathering?.id ?? "demo"}
+            participantCount={activeGathering?.participants.length ?? 6}
+            onNotice={(message) => {
+              setNotice(message);
+              window.setTimeout(() => setNotice(""), 2800);
+            }}
+          />
+        )}
 
         {activeGathering && (
           <section className="expenses-section" id="gastos">
@@ -1629,6 +1659,21 @@ export default function Home() {
         <span>Argentina · 2026</span>
       </footer>
 
+      <MobileBottomNav
+        purchaseEnabled={Boolean(confirmed)}
+        onHome={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+        onAvailability={() => document.getElementById("disponibilidad")?.scrollIntoView({ behavior: "smooth" })}
+        onPurchase={() => {
+          if (confirmed) {
+            document.getElementById("compra")?.scrollIntoView({ behavior: "smooth" });
+            return;
+          }
+          setNotice("La compra se habilita cuando el organizador confirma una fecha.");
+          window.setTimeout(() => setNotice(""), 2800);
+        }}
+        onMore={() => document.querySelector(".support-card, footer")?.scrollIntoView({ behavior: "smooth" })}
+      />
+
       {showResults && (
         <div className="modal-backdrop" role="presentation" onMouseDown={() => setShowResults(false)}>
           <section className="results-sheet" role="dialog" aria-modal="true" aria-labelledby="results-title" onMouseDown={(event) => event.stopPropagation()}>
@@ -1728,6 +1773,15 @@ export default function Home() {
                         </span>
                       )}
                     </div>
+                    {currentParticipant?.isOrganizer && (
+                      <button
+                        type="button"
+                        className="proposal-confirm"
+                        onClick={() => confirmProposal(match.startsAt)}
+                      >
+                        Confirmar esta fecha
+                      </button>
+                    )}
                   </article>
                 );
               })}

@@ -17,7 +17,7 @@ Sale Juntada ayuda a coordinar una reunión con amigos, familia o equipo de trab
 ## 🧩 Stack
 
 - Frontend: React 19, TypeScript, Vite, React Router, Tailwind CSS
-- Backend: NestJS, Prisma, PostgreSQL / Neon, Swagger, Socket.IO
+- Backend: NestJS, Prisma, PostgreSQL / Supabase, Swagger, Socket.IO
 - Calidad: Vitest, Playwright, Jest
 - Infra: Vercel + Fly.io
 
@@ -29,6 +29,11 @@ Sale Juntada ayuda a coordinar una reunión con amigos, familia o equipo de trab
 - [docs/google-calendar.md](docs/google-calendar.md): especificación de la integración con Google Calendar
 
 ## 🚀 Arranque local
+
+Requisitos recomendados:
+
+- Node.js 22 o superior
+- PostgreSQL 15 o superior, o los binarios locales incluidos en `C:\Program Files\pgsql\bin`
 
 ### 1) Frontend
 
@@ -44,10 +49,27 @@ npm run dev
 cd sale-juntada-back
 cp .env.example .env
 npm install
-npm run prisma:generate
-npm run migrate:deploy
+npm run db:setup
 npm run start:dev
 ```
+
+`db:setup` inicializa PostgreSQL local en el puerto `54329`, aplica todas las
+migraciones y carga una juntada demo idempotente. La base y sus logs se guardan
+en `sale-juntada-back/.local-postgres` y no se versionan.
+
+Comandos útiles:
+
+```bash
+npm run db:local:start
+npm run db:status
+npm run prisma:seed
+npm run db:local:stop
+```
+
+La juntada demo queda disponible en:
+
+- http://localhost:5173/j/asado-demo-tucuman
+- http://localhost:3001/api/gatherings/asado-demo-tucuman
 
 La API queda disponible en:
 
@@ -65,11 +87,11 @@ VITE_SUPPORT_ALIAS
 VITE_GOOGLE_CLIENT_ID
 ```
 
-El backend está preparado para PostgreSQL/Neon con:
+El backend está preparado para PostgreSQL/Supabase con:
 
 ```bash
 DATABASE_URL
-DATABASE_URL_UNPOOLED
+DIRECT_URL
 FRONTEND_URLS
 GOOGLE_CLIENT_ID
 GOOGLE_CLIENT_SECRET
@@ -77,24 +99,23 @@ GOOGLE_CALENDAR_REDIRECT_URI
 GOOGLE_TOKEN_ENCRYPTION_KEY
 ```
 
-## 🗄️ Base de datos con Neon
+## 🗄️ Base de datos con Supabase
 
-El backend está listo para trabajar con Neon Postgres usando dos conexiones:
+El backend usa Supabase Postgres mediante Prisma con dos conexiones:
 
-- `DATABASE_URL`: Pry para la app y Prisma Client
-- `DATABASE_URL_UNPOOLED`: conexión directa para migraciones
+- `DATABASE_URL`: pooler transaccional para la app y Prisma Client
+- `DIRECT_URL`: pooler de sesión para Prisma Migrate
 
-Para inicializar una base nueva:
+Copiá ambas cadenas desde **Connect → ORM → Prisma** en Supabase. Para inicializar una base nueva:
 
 ```bash
 cd sale-juntada-back
-npx -y neon@latest init
-npx -y neon env pull
 npm run migrate:deploy
+npm run prisma:seed
 npm run start:dev
 ```
 
-Los secretos se mantienen en [sale-juntada-back/.env](sale-juntada-back/.env) y quedan fuera del repositorio.
+Los secretos se mantienen en `sale-juntada-back/.env`, quedan fuera del repositorio y nunca deben exponerse en el frontend.
 
 ## 📌 Alcance actual
 
@@ -116,9 +137,11 @@ El alcance funcional, la estrategia de privacidad y los criterios de aceptación
 
 ## 🌐 Entornos
 
-- Frontend: Vercel
-- API: Fly.io
-- Base de datos: Neon Postgres
+- Frontend: [sale-juntada-front.vercel.app](https://sale-juntada-front.vercel.app)
+- API: [sale-juntada-api-tomytf13.fly.dev](https://sale-juntada-api-tomytf13.fly.dev/api/health)
+- Base de datos: Supabase Postgres en São Paulo
+
+El frontend se comunica con la API por HTTPS y Socket.IO. Fly ejecuta las migraciones de Prisma antes de reemplazar una versión, y los secretos de conexión se administran en la plataforma, nunca en Git.
 
 ## 🧪 Validación
 
@@ -128,6 +151,14 @@ Se incluye soporte para ejecutar pruebas de frontend, backend y E2E:
 cd sale-juntada-front && npm run test
 cd sale-juntada-back && npm run test
 cd sale-juntada-e2e && npm test
+```
+
+Para incluir el smoke test real contra PostgreSQL y la API local:
+
+```powershell
+$env:E2E_REAL_DB="1"
+$env:E2E_BASE_URL="http://127.0.0.1:5173"
+npm run test:smoke
 ```
 
 ## 📄 Licencia
