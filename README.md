@@ -1,24 +1,36 @@
 # Sale Juntada
 
-Aplicación web mobile-first para coordinar juntadas sin encuestas eternas.
+Aplicación mobile-first para organizar juntadas en grupo sin perder horas en encuestas interminables.
 
-## Stack
+Sale Juntada ayuda a coordinar una reunión con amigos, familia o equipo de trabajo definiendo un rango de fechas, recibiendo la disponibilidad de cada persona, buscando los mejores horarios de coincidencia y cerrando la propuesta con confirmación y gastos compartidos.
 
-La base replica el stack tecnológico de Turnero:
+## ✨ Qué hace
 
-- Frontend: React 19, TypeScript, Vite, Tailwind CSS, React Router y TanStack Query.
-- Backend: NestJS, Prisma, PostgreSQL/Neon, Swagger y Socket.IO.
-- Calidad: Vitest y Playwright.
+- Crea una juntada con nombre, fechas, horario y duración
+- Invita participantes sin exigir registro obligatorio
+- Recibe disponibilidad individual y calcula la mejor coincidencia
+- Muestra los horarios más probables según el grupo
+- Soporta cierre de la propuesta, confirmación y enlace para compartir
+- Gestiona gastos y liquidaciones entre participantes
+- Prepara integración con Google Calendar para automatizar disponibilidad
 
-## Estructura
+## 🧩 Stack
 
-- `sale-juntada-front/`: experiencia web para organizadores e invitados.
-- `sale-juntada-back/`: API, dominio de juntadas y cálculo de coincidencias.
-- `sale-juntada-e2e/`: pruebas de los recorridos críticos.
+- Frontend: React 19, TypeScript, Vite, React Router, Tailwind CSS
+- Backend: NestJS, Prisma, PostgreSQL / Neon, Swagger, Socket.IO
+- Calidad: Vitest, Playwright, Jest
+- Infra: Vercel + Fly.io
 
-## Desarrollo local
+## 📁 Estructura del proyecto
 
-Frontend:
+- [sale-juntada-front](sale-juntada-front): aplicación web del usuario
+- [sale-juntada-back](sale-juntada-back): API, dominio y lógica de coincidencias
+- [sale-juntada-e2e](sale-juntada-e2e): pruebas end-to-end del flujo crítico
+- [docs/google-calendar.md](docs/google-calendar.md): especificación de la integración con Google Calendar
+
+## 🚀 Arranque local
+
+### 1) Frontend
 
 ```bash
 cd sale-juntada-front
@@ -26,7 +38,7 @@ npm install
 npm run dev
 ```
 
-Backend:
+### 2) Backend
 
 ```bash
 cd sale-juntada-back
@@ -37,61 +49,87 @@ npm run migrate:deploy
 npm run start:dev
 ```
 
-La API queda disponible en `http://localhost:3001/api` y Swagger en
-`http://localhost:3001/api/docs`.
+La API queda disponible en:
 
-## Producción
+- http://localhost:3001/api
+- Swagger: http://localhost:3001/api/docs
 
-- Frontend (Vercel): https://sale-juntada-front.vercel.app
-- API (Fly.io, región `gru`): https://sale-juntada-api-tomytf13.fly.dev/api
-- Base de datos: Neon Postgres
+## 🏗️ Variables de entorno
 
-El frontend se compila con `VITE_API_URL` y `VITE_SOCKET_URL`. El backend
-ejecuta `prisma migrate deploy` antes de cada release y restringe HTTP y
-Socket.IO al dominio configurado en `FRONTEND_URLS`.
+El frontend usa variables del tipo:
 
-## Base de datos con Neon
+```bash
+VITE_API_URL
+VITE_SOCKET_URL
+VITE_SUPPORT_ALIAS
+VITE_GOOGLE_CLIENT_ID
+```
 
-El backend está preparado para Neon Postgres mediante dos conexiones:
+El backend está preparado para PostgreSQL/Neon con:
 
-- `DATABASE_URL`: conexión pooled usada por NestJS y Prisma Client.
-- `DATABASE_URL_UNPOOLED`: conexión directa usada por Prisma Migrate.
+```bash
+DATABASE_URL
+DATABASE_URL_UNPOOLED
+FRONTEND_URLS
+GOOGLE_CLIENT_ID
+GOOGLE_CLIENT_SECRET
+GOOGLE_CALENDAR_REDIRECT_URI
+GOOGLE_TOKEN_ENCRYPTION_KEY
+```
 
-Para enlazar una instalación nueva:
+## 🗄️ Base de datos con Neon
+
+El backend está listo para trabajar con Neon Postgres usando dos conexiones:
+
+- `DATABASE_URL`: Pry para la app y Prisma Client
+- `DATABASE_URL_UNPOOLED`: conexión directa para migraciones
+
+Para inicializar una base nueva:
 
 ```bash
 cd sale-juntada-back
 npx -y neon@latest init
 npx -y neon env pull
-```
-
-Luego aplicar las migraciones y levantar la API:
-
-```bash
 npm run migrate:deploy
 npm run start:dev
 ```
 
-Las credenciales permanecen en `sale-juntada-back/.env`, archivo ignorado por
-Git.
+Los secretos se mantienen en [sale-juntada-back/.env](sale-juntada-back/.env) y quedan fuera del repositorio.
 
-## Primer alcance
+## 📌 Alcance actual
 
-- Crear una juntada con rango de fechas y duración.
-- Incorporar participantes sin obligarlos a registrarse.
-- Cargar disponibilidad exacta o tentativa.
-- Ordenar las tres mejores coincidencias.
-- Preparar la confirmación y el enlace para compartir.
+- crear juntadas con rango de fechas y duración
+- registrar participantes sin login obligatorio
+- cargar disponibilidad manual o tentativa
+- ordenar las mejores coincidencias
+- preparar confirmación y compartir enlace
+- administrar gastos y saldos
 
-## Próximas integraciones
+## 🔮 Próximas integraciones
 
-- Google Calendar: cada participante podrá conectar su cuenta de forma opcional
-  para importar automáticamente sus bloques ocupados, sin compartir nombres ni
-  detalles de sus eventos.
-- La disponibilidad manual seguirá funcionando para quienes no usen Calendar y
-  permitirá corregir o complementar lo importado.
-- Al confirmar la juntada, se podrá agregar el evento al calendario de cada
-  participante con una acción explícita.
+- Google Calendar: importar bloques ocupados de forma opcional
+- sincronización de disponibilidad por participante
+- confirmación del evento final en el calendario personal
+- refinamiento del algoritmo de matching y cierre de reuniones
 
-El alcance funcional, las decisiones de privacidad y los criterios de aceptación
-están documentados en [`docs/google-calendar.md`](docs/google-calendar.md).
+El alcance funcional, la estrategia de privacidad y los criterios de aceptación quedan detallados en [docs/google-calendar.md](docs/google-calendar.md).
+
+## 🌐 Entornos
+
+- Frontend: Vercel
+- API: Fly.io
+- Base de datos: Neon Postgres
+
+## 🧪 Validación
+
+Se incluye soporte para ejecutar pruebas de frontend, backend y E2E:
+
+```bash
+cd sale-juntada-front && npm run test
+cd sale-juntada-back && npm run test
+cd sale-juntada-e2e && npm test
+```
+
+## 📄 Licencia
+
+Este proyecto está en desarrollo activo y se usa como base para una solución de coordinación de reuniones y gastos compartidos.
