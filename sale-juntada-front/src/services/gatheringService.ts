@@ -1,9 +1,9 @@
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001/api";
 export const SOCKET_URL =
-  import.meta.env.VITE_SOCKET_URL ??
-  API_URL.replace(/\/api\/?$/, "");
+  import.meta.env.VITE_SOCKET_URL ?? API_URL.replace(/\/api\/?$/, "");
 
 export type CreateGatheringInput = {
+  templateGatheringId?: string;
   title: string;
   organizerName: string;
   organizerAvatarUrl?: string;
@@ -41,6 +41,8 @@ export type Participant = {
   name: string;
   avatarUrl?: string | null;
   isOrganizer: boolean;
+  dietaryPreferences?: DietaryPreference[];
+  mealArrangement?: MealArrangement | null;
   responseToken?: string;
   expensesReadyAt?: string | null;
   availabilities?: Availability[];
@@ -127,6 +129,31 @@ export type ExpenseSettlement = {
   }>;
 };
 
+export type DietaryPreference = "CELIAC" | "VEGAN" | "VEGETARIAN";
+export type MealArrangement = "SELF_MANAGED" | "GROUP_MENU";
+
+export type GatheringHistoryItem = {
+  id: string;
+  slug: string;
+  title: string;
+  status: "DRAFT" | "OPEN" | "PROPOSED" | "CONFIRMED" | "CANCELLED";
+  organizerName: string;
+  locationHint?: string | null;
+  finalizedLocation?: string | null;
+  finalizedStart?: string | null;
+  windowStart: string;
+  windowEnd: string;
+  createdAt: string;
+  updatedAt: string;
+  participantCount: number;
+  participant: {
+    id: string;
+    name: string;
+    responseToken: string;
+    isOrganizer: boolean;
+  };
+};
+
 export type PurchaseItem = {
   key: string;
   label: string;
@@ -135,7 +162,62 @@ export type PurchaseItem = {
   suggestedQuantity: number;
   category: "food" | "drinks" | "other" | "alcohol";
   position: number;
+  assignedTo: {
+    id: string;
+    name: string;
+    avatarUrl?: string | null;
+  } | null;
+  assignedAt: string | null;
+  isReady: boolean;
+  contributions: PurchaseContribution[];
 };
+
+export type PurchaseContribution = {
+  id: string;
+  catalogProductId?: string | null;
+  catalogPresentationId?: string | null;
+  description: string;
+  quantity: number;
+  unit: string;
+  note: string | null;
+  isReady: boolean;
+  createdAt: string;
+  updatedAt: string;
+  participant: {
+    id: string;
+    name: string;
+    avatarUrl?: string | null;
+  };
+};
+
+export type CatalogPresentation = {
+  id: string;
+  key: string;
+  label: string;
+  unit: string;
+};
+
+export type CatalogProduct = {
+  id: string;
+  key: string;
+  categoryKey: string;
+  name: string;
+  brand: string | null;
+  description: string | null;
+  visualKey: string;
+  accentColor: string;
+  tags: string[];
+  isAlcohol: boolean;
+  presentations: CatalogPresentation[];
+};
+
+export type PurchaseCatalog = {
+  version: number;
+  products: CatalogProduct[];
+};
+
+export type PurchaseResponsibilityAction =
+  "claim" | "release" | "ready" | "pending";
 
 export type PurchasePlan = {
   id: string | null;
@@ -149,16 +231,32 @@ export type PurchasePlan = {
 };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_URL}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...init?.headers,
-    },
-  });
+  const controller = new AbortController();
+  const abortFromCaller = () => controller.abort();
+  init?.signal?.addEventListener("abort", abortFromCaller, { once: true });
+  const timeout = window.setTimeout(() => controller.abort(), 15_000);
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      ...init,
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        ...init?.headers,
+      },
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error("La conexión tardó demasiado. Probá nuevamente.");
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+    init?.signal?.removeEventListener("abort", abortFromCaller);
+  }
 
   if (!response.ok) {
-    const body = await response.json().catch(() => null) as {
+    const body = (await response.json().catch(() => null)) as {
       message?: string | string[];
     } | null;
     const detail = Array.isArray(body?.message)
@@ -172,6 +270,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+let purchaseCatalogRequest: Promise<PurchaseCatalog> | null = null;
+
 export const gatheringService = {
   searchLocations(query: string) {
     return request<LocationSearchResult[]>(
@@ -179,10 +279,19 @@ export const gatheringService = {
     );
   },
 
-  create(input: CreateGatheringInput) {
+  create(input: CreateGatheringInput, accessToken?: string | null) {
     return request<Gathering>("/gatherings", {
       method: "POST",
+      headers: accessToken
+        ? { Authorization: `Bearer ${accessToken}` }
+        : undefined,
       body: JSON.stringify(input),
+    });
+  },
+
+  getMyGatherings(accessToken: string) {
+    return request<GatheringHistoryItem[]>("/users/me/gatherings", {
+      headers: { Authorization: `Bearer ${accessToken}` },
     });
   },
 
@@ -227,8 +336,55 @@ export const gatheringService = {
     return request<Match[]>(`/gatherings/${gatheringId}/matches`);
   },
 
+  updateDietaryProfile(
+    gatheringId: string,
+    participantId: string,
+    participantToken: string,
+    input: {
+      dietaryPreferences: DietaryPreference[];
+      mealArrangement: MealArrangement | null;
+    },
+  ) {
+    return request<Participant>(
+      `/gatherings/${gatheringId}/participants/${participantId}/dietary-profile`,
+      {
+        method: "PUT",
+        headers: { "x-participant-token": participantToken },
+        body: JSON.stringify(input),
+      },
+    );
+  },
+
+  linkAuthenticatedParticipant(
+    gatheringId: string,
+    participantId: string,
+    participantToken: string,
+    accessToken: string,
+  ) {
+    return request<Participant>(
+      `/gatherings/${gatheringId}/participants/${participantId}/auth-link`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "x-participant-token": participantToken,
+        },
+      },
+    );
+  },
+
   getPurchasePlan(gatheringId: string) {
     return request<PurchasePlan>(`/gatherings/${gatheringId}/purchase`);
+  },
+
+  getPurchaseCatalog() {
+    purchaseCatalogRequest ??= request<PurchaseCatalog>(
+      "/gatherings/catalog/purchase",
+    ).catch((error) => {
+      purchaseCatalogRequest = null;
+      throw error;
+    });
+    return purchaseCatalogRequest;
   },
 
   updatePurchasePlan(
@@ -245,6 +401,81 @@ export const gatheringService = {
         method: "PUT",
         headers: { "x-participant-token": participantToken },
         body: JSON.stringify(input),
+      },
+    );
+  },
+
+  updatePurchaseResponsibility(
+    gatheringId: string,
+    participantId: string,
+    participantToken: string,
+    itemKey: string,
+    action: PurchaseResponsibilityAction,
+    adultConfirmed = false,
+  ) {
+    return request<PurchasePlan>(
+      `/gatherings/${gatheringId}/participants/${participantId}/purchase/items/${encodeURIComponent(itemKey)}/responsibility`,
+      {
+        method: "PUT",
+        headers: { "x-participant-token": participantToken },
+        body: JSON.stringify({ action, adultConfirmed }),
+      },
+    );
+  },
+
+  upsertPurchaseContribution(
+    gatheringId: string,
+    participantId: string,
+    participantToken: string,
+    itemKey: string,
+    input: {
+      description?: string;
+      catalogProductId?: string;
+      catalogPresentationId?: string;
+      quantity: number;
+      unit?: string;
+      note?: string;
+      adultConfirmed?: boolean;
+    },
+  ) {
+    return request<PurchasePlan>(
+      `/gatherings/${gatheringId}/participants/${participantId}/purchase/items/${encodeURIComponent(itemKey)}/contribution`,
+      {
+        method: "PUT",
+        headers: { "x-participant-token": participantToken },
+        body: JSON.stringify(input),
+      },
+    );
+  },
+
+  updatePurchaseContributionStatus(
+    gatheringId: string,
+    participantId: string,
+    participantToken: string,
+    contributionId: string,
+    isReady: boolean,
+  ) {
+    return request<PurchasePlan>(
+      `/gatherings/${gatheringId}/participants/${participantId}/purchase/contributions/${contributionId}/status`,
+      {
+        method: "PATCH",
+        headers: { "x-participant-token": participantToken },
+        body: JSON.stringify({ isReady }),
+      },
+    );
+  },
+
+  deletePurchaseContribution(
+    gatheringId: string,
+    participantId: string,
+    participantToken: string,
+    contributionId: string,
+  ) {
+    return request<PurchasePlan>(
+      `/gatherings/${gatheringId}/participants/${participantId}/purchase/contributions/${contributionId}`,
+      {
+        method: "DELETE",
+        headers: { "x-participant-token": participantToken },
       },
     );
   },

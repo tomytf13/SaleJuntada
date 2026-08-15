@@ -13,6 +13,13 @@ import {
 } from "class-validator";
 
 export class CreateGatheringDto {
+  @ApiPropertyOptional({
+    description: "Juntada propia de la que se copiarán configuración y cantidades",
+  })
+  @IsOptional()
+  @IsString()
+  templateGatheringId?: string;
+
   @ApiProperty({ example: "Asado con los pibes" })
   @IsString()
   @MinLength(3)

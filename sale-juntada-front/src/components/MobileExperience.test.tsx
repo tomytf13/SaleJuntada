@@ -16,8 +16,8 @@ const sharedPlan: PurchasePlan = {
   participantBaseline: 6,
   updatedAt: "2026-08-11T00:00:00.000Z",
   items: [
-    { key: "meat", label: "Carne", unit: "kg", quantity: 3, suggestedQuantity: 3, category: "food", position: 0 },
-    { key: "beer", label: "Cerveza", unit: "litros", quantity: 6, suggestedQuantity: 6, category: "alcohol", position: 1 },
+    { key: "meat", label: "Comida principal", unit: "aportes", quantity: 1, suggestedQuantity: 1, category: "food", position: 0, assignedTo: null, assignedAt: null, isReady: false, contributions: [] },
+    { key: "beer", label: "Bebidas con alcohol", unit: "aportes", quantity: 1, suggestedQuantity: 1, category: "alcohol", position: 1, assignedTo: null, assignedAt: null, isReady: false, contributions: [] },
   ],
 };
 
@@ -82,20 +82,16 @@ describe("PurchasePlanner", () => {
       />,
     );
 
-    expect(screen.queryByText("Cerveza")).not.toBeInTheDocument();
+    expect(screen.queryByText("Bebidas con alcohol")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("switch"));
-    expect(screen.getByText("Cerveza")).toBeInTheDocument();
+    expect(screen.getByText("Bebidas con alcohol")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /compartir lista/i }));
     expect(onNotice).toHaveBeenCalledWith(expect.stringMatching(/mayor de 18 años/i));
 
-    fireEvent.click(screen.getByRole("checkbox"));
-    fireEvent.click(screen.getByRole("button", { name: /compartir lista/i }));
-
-    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(expect.stringContaining("Cerveza"));
   });
 
-  it("calcula la sugerencia inicial usando el tamaño del grupo", () => {
+  it("usa categorías amplias e incluye snacks", () => {
     render(
       <PurchasePlanner
         gatheringKey="dynamic-demo"
@@ -104,11 +100,9 @@ describe("PurchasePlanner", () => {
       />,
     );
 
-    const meatRow = screen
-      .getByText("Carne")
-      .closest(".purchase-item") as HTMLElement | null;
-    expect(meatRow).not.toBeNull();
-    expect(within(meatRow!).getByText(/sugerido 5/i)).toBeInTheDocument();
+    expect(screen.getByText("Comida principal")).toBeInTheDocument();
+    expect(screen.getByText("Snacks")).toBeInTheDocument();
+    expect(screen.getByText(/papas, maní y más/i)).toBeInTheDocument();
   });
 
   it("deja la compra compartida en modo lectura para invitados", async () => {
@@ -126,20 +120,79 @@ describe("PurchasePlanner", () => {
       />,
     );
 
-    await screen.findByText("Sólo lectura");
-    expect(screen.getByRole("button", { name: /agregar carne/i })).toBeDisabled();
+    await screen.findByText("Lista compartida");
+    expect(screen.getAllByRole("button", { name: /sumar mi aporte/i })[0]).toBeEnabled();
     expect(screen.getByRole("switch")).toBeDisabled();
   });
 
-  it("sincroniza los cambios del organizador después del debounce", async () => {
+  it("permite especificar el aporte dentro de una categoría", async () => {
+    vi.spyOn(gatheringService, "getPurchasePlan").mockResolvedValue(sharedPlan);
+    const assignedPlan: PurchasePlan = {
+      ...sharedPlan,
+      items: sharedPlan.items.map((item) => item.key === "meat"
+        ? {
+            ...item,
+            contributions: [{
+              id: "contribution",
+              description: "2 Coca-Cola sin azúcar",
+              quantity: 2,
+              unit: "botellas",
+              note: null,
+              isReady: false,
+              createdAt: "2026-08-13T12:00:00.000Z",
+              updatedAt: "2026-08-13T12:00:00.000Z",
+              participant: { id: "guest", name: "Mica", avatarUrl: "emoji:🥳" },
+            }],
+          }
+        : item),
+    };
+    const updateContribution = vi
+      .spyOn(gatheringService, "upsertPurchaseContribution")
+      .mockResolvedValue(assignedPlan);
+
+    render(
+      <PurchasePlanner
+        gatheringKey="gathering"
+        gatheringId="gathering"
+        participantId="guest"
+        participantToken="token"
+        participantCount={6}
+        canEdit={false}
+        onNotice={vi.fn()}
+      />,
+    );
+
+    const tile = await screen.findByTestId("responsibility-meat");
+    fireEvent.click(within(tile).getByRole("button", { name: /sumar mi aporte/i }));
+    fireEvent.change(within(tile).getByLabelText(/qué vas a llevar/i), {
+      target: { value: "2 Coca-Cola sin azúcar" },
+    });
+    fireEvent.change(within(tile).getByLabelText(/presentación/i), {
+      target: { value: "botellas" },
+    });
+    fireEvent.click(within(tile).getByRole("button", { name: /guardar aporte/i }));
+
+    await waitFor(() => expect(updateContribution).toHaveBeenCalledWith(
+      "gathering",
+      "guest",
+      "token",
+      "meat",
+      expect.objectContaining({
+        description: "2 Coca-Cola sin azúcar",
+        quantity: 1,
+        unit: "botellas",
+      }),
+    ));
+    expect(await within(tile).findByText("2 Coca-Cola sin azúcar")).toBeInTheDocument();
+  });
+
+  it("sincroniza la habilitación de alcohol del organizador", async () => {
     vi.spyOn(gatheringService, "getPurchasePlan").mockResolvedValue(sharedPlan);
     const update = vi
       .spyOn(gatheringService, "updatePurchasePlan")
       .mockResolvedValue({
         ...sharedPlan,
-        items: sharedPlan.items.map((item) =>
-          item.key === "meat" ? { ...item, quantity: 4 } : item,
-        ),
+        includeAlcohol: true,
       });
 
     render(
@@ -155,7 +208,7 @@ describe("PurchasePlanner", () => {
     );
 
     await screen.findByText("Sincronizada");
-    fireEvent.click(screen.getByRole("button", { name: /agregar carne/i }));
+    fireEvent.click(screen.getByRole("switch"));
 
     await waitFor(() => expect(update).toHaveBeenCalledOnce(), { timeout: 1_500 });
     expect(update).toHaveBeenCalledWith(
@@ -163,7 +216,7 @@ describe("PurchasePlanner", () => {
       "organizer",
       "token",
       expect.objectContaining({
-        items: expect.arrayContaining([{ key: "meat", quantity: 4 }]),
+        includeAlcohol: true,
       }),
     );
   });

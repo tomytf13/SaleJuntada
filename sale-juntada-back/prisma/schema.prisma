@@ -74,6 +74,9 @@ model Participant {
   contact              String?
   avatarUrl            String?
   googleSubject        String?
+  authUserId           String?
+  dietaryPreferences   String[]               @default([])
+  mealArrangement      String?
   isOrganizer          Boolean                @default(false)
   responseToken        String                 @unique @default(cuid())
   expensesReadyAt      DateTime?
@@ -82,11 +85,15 @@ model Participant {
   transfersSent        TransferConfirmation[] @relation("TransferFrom")
   transfersReceived    TransferConfirmation[] @relation("TransferTo")
   purchasePlansUpdated PurchasePlan[]         @relation("PurchasePlanUpdatedBy")
+  purchaseItemsAssigned PurchaseItem[]         @relation("PurchaseItemAssignee")
+  purchaseContributions PurchaseContribution[]
   createdAt            DateTime               @default(now())
   updatedAt            DateTime               @updatedAt
 
   @@unique([gatheringId, googleSubject])
+  @@unique([gatheringId, authUserId])
   @@index([gatheringId])
+  @@index([authUserId])
 }
 
 model Availability {
@@ -132,6 +139,8 @@ model TransferConfirmation {
 
   @@unique([gatheringId, fromParticipantId, toParticipantId, amountCents])
   @@index([gatheringId])
+  @@index([fromParticipantId])
+  @@index([toParticipantId])
 }
 
 model Proposal {
@@ -169,18 +178,87 @@ model PurchasePlan {
 }
 
 model PurchaseItem {
-  id             String           @id @default(cuid())
-  purchasePlanId String
-  purchasePlan   PurchasePlan     @relation(fields: [purchasePlanId], references: [id], onDelete: Cascade)
-  key            String
-  label          String
-  unit           String
-  quantity       Int
-  category       PurchaseCategory
-  position       Int              @default(0)
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @updatedAt
+  id                    String           @id @default(cuid())
+  purchasePlanId        String
+  purchasePlan          PurchasePlan     @relation(fields: [purchasePlanId], references: [id], onDelete: Cascade)
+  key                   String
+  label                 String
+  unit                  String
+  quantity              Int
+  category              PurchaseCategory
+  position              Int              @default(0)
+  assignedParticipantId String?
+  assignee              Participant?     @relation("PurchaseItemAssignee", fields: [assignedParticipantId], references: [id], onDelete: SetNull)
+  assignedAt            DateTime?
+  isReady               Boolean          @default(false)
+  contributions         PurchaseContribution[]
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
 
   @@unique([purchasePlanId, key])
   @@index([purchasePlanId, position])
+  @@index([assignedParticipantId])
+}
+
+model PurchaseContribution {
+  id                    String               @id @default(cuid())
+  purchaseItemId        String
+  purchaseItem          PurchaseItem         @relation(fields: [purchaseItemId], references: [id], onDelete: Cascade)
+  participantId         String
+  participant           Participant          @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  catalogProductId      String?
+  catalogProduct        CatalogProduct?       @relation(fields: [catalogProductId], references: [id], onDelete: SetNull)
+  catalogPresentationId String?
+  catalogPresentation   CatalogPresentation?  @relation(fields: [catalogPresentationId], references: [id], onDelete: SetNull)
+  description           String
+  quantity              Int                  @default(1)
+  unit                  String               @default("unidad")
+  note                  String?
+  isReady               Boolean              @default(false)
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  @@unique([purchaseItemId, participantId])
+  @@index([purchaseItemId, updatedAt])
+  @@index([participantId])
+  @@index([catalogProductId])
+  @@index([catalogPresentationId])
+}
+
+model CatalogProduct {
+  id            String                @id @default(cuid())
+  key           String                @unique
+  categoryKey   String
+  name          String
+  brand         String?
+  description   String?
+  visualKey     String
+  accentColor   String                @default("#ff6b35")
+  tags          String[]              @default([])
+  isAlcohol     Boolean               @default(false)
+  isActive      Boolean               @default(true)
+  position      Int                   @default(0)
+  presentations CatalogPresentation[]
+  contributions PurchaseContribution[]
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+
+  @@index([categoryKey, isActive, position])
+}
+
+model CatalogPresentation {
+  id            String                 @id @default(cuid())
+  productId     String
+  product       CatalogProduct         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  key           String
+  label         String
+  unit          String
+  position      Int                    @default(0)
+  isActive      Boolean                @default(true)
+  contributions PurchaseContribution[]
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+
+  @@unique([productId, key])
+  @@index([productId, isActive, position])
 }

@@ -69,12 +69,62 @@ try {
     plan.items.find((item) => item.key === "meat").quantity + 1,
   );
 
+  const responsibilityUrl =
+    `${apiUrl}/gatherings/${gathering.id}/participants/${guest.id}` +
+    "/purchase/items/meat/responsibility";
+  const claimResponse = await fetch(responsibilityUrl, {
+    method: "PUT",
+    headers: {
+      "content-type": "application/json",
+      "x-participant-token": guest.responseToken,
+    },
+    body: JSON.stringify({ action: "claim" }),
+  });
+  assert.equal(claimResponse.status, 200);
+  const claimed = await claimResponse.json();
+  assert.equal(
+    claimed.items.find((item) => item.key === "meat").assignedTo.id,
+    guest.id,
+  );
+
+  const competingClaimResponse = await fetch(
+    `${apiUrl}/gatherings/${gathering.id}/participants/${organizer.id}` +
+      "/purchase/items/meat/responsibility",
+    {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+        "x-participant-token": organizer.responseToken,
+      },
+      body: JSON.stringify({ action: "claim" }),
+    },
+  );
+  assert.equal(competingClaimResponse.status, 409);
+
+  const readyResponse = await fetch(responsibilityUrl, {
+    method: "PUT",
+    headers: {
+      "content-type": "application/json",
+      "x-participant-token": guest.responseToken,
+    },
+    body: JSON.stringify({ action: "ready" }),
+  });
+  assert.equal(readyResponse.status, 200);
+  const ready = await readyResponse.json();
+  assert.equal(
+    ready.items.find((item) => item.key === "meat").isReady,
+    true,
+  );
+
   console.log(
     JSON.stringify({
       guestStatus: guestResponse.status,
       organizerStatus: organizerResponse.status,
       persisted: saved.persisted,
       purchaseItems: saved.items.length,
+      claimedBy: guest.name,
+      competingClaimStatus: competingClaimResponse.status,
+      ready: true,
     }),
   );
 } finally {

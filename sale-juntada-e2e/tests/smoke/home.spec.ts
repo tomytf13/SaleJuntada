@@ -358,7 +358,7 @@ test("mantiene los diálogos accesibles con movimiento reducido", async ({
   ).toBeHidden();
 });
 
-test("el organizador edita y sincroniza la compra compartida", async ({
+test("el grupo elige responsables y el organizador edita la compra", async ({
   page,
 }) => {
   const gathering = {
@@ -412,11 +412,15 @@ test("el organizador edita y sincroniza la compra compartida", async ({
         suggestedQuantity: 1,
         category: "food",
         position: 0,
+        assignedTo: null,
+        assignedAt: null,
+        isReady: false,
       },
     ],
   };
   let purchaseToken = "";
   let meatQuantity = 0;
+  let responsibilityAction = "";
 
   await page.addInitScript(() => {
     localStorage.setItem(
@@ -439,6 +443,28 @@ test("el organizador edita y sincroniza la compra compartida", async ({
     }
     if (request.url().endsWith("/purchase") && request.method() === "GET") {
       await route.fulfill({ status: 200, json: plan });
+      return;
+    }
+    if (request.url().endsWith("/responsibility") && request.method() === "PUT") {
+      purchaseToken = request.headers()["x-participant-token"];
+      responsibilityAction = request.postDataJSON().action;
+      await route.fulfill({
+        status: 200,
+        json: {
+          ...plan,
+          id: "plan-purchase",
+          persisted: true,
+          items: plan.items.map((item) => ({
+            ...item,
+            assignedTo: {
+              id: "organizer-purchase",
+              name: "Tomás",
+              avatarUrl: null,
+            },
+            assignedAt: "2026-08-13T12:00:00.000Z",
+          })),
+        },
+      });
       return;
     }
     if (request.url().endsWith("/purchase") && request.method() === "PUT") {
@@ -466,6 +492,12 @@ test("el organizador edita y sincroniza la compra compartida", async ({
   await page.getByRole("button", { name: /Encontrar el mejor momento/i }).click();
   await page.getByRole("button", { name: /Confirmar esta fecha/i }).click();
   await expect(page.getByRole("heading", { name: /Armemos la compra/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Elegí tu misión/i })).toBeVisible();
+
+  const meatMission = page.getByTestId("responsibility-meat");
+  await meatMission.getByRole("button", { name: /Me hago cargo/i }).click();
+  await expect.poll(() => responsibilityAction).toBe("claim");
+  await expect(meatMission.getByText("Vos")).toBeVisible();
 
   await page.getByRole("button", { name: /Agregar Carne/i }).click();
   await expect.poll(() => purchaseToken).toBe("organizer-purchase-token");

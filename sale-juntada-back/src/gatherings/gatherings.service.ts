@@ -1,78 +1,106 @@
 import {
   BadRequestException,
+  ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
-import { AvailabilityKind, PurchaseCategory } from "@prisma/client";
+import { AvailabilityKind, Prisma, PurchaseCategory } from "@prisma/client";
 import { randomBytes } from "node:crypto";
+import type { AuthIdentity } from "../auth/supabase-auth.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { AddExpenseDto } from "./dto/add-expense.dto";
 import { AddParticipantDto } from "./dto/add-participant.dto";
+import { AuthParticipantDto } from "./dto/auth-participant.dto";
 import { ConfirmTransferDto } from "./dto/confirm-transfer.dto";
 import { CreateGatheringDto } from "./dto/create-gathering.dto";
 import { GoogleParticipantDto } from "./dto/google-participant.dto";
 import { SetAvailabilityDto } from "./dto/set-availability.dto";
+import { UpdateDietaryProfileDto } from "./dto/update-dietary-profile.dto";
 import { UpdatePurchasePlanDto } from "./dto/update-purchase-plan.dto";
+import { UpdatePurchaseContributionStatusDto } from "./dto/update-purchase-contribution-status.dto";
+import { UpsertPurchaseContributionDto } from "./dto/upsert-purchase-contribution.dto";
+import {
+  type PurchaseResponsibilityAction,
+  UpdatePurchaseResponsibilityDto,
+} from "./dto/update-purchase-responsibility.dto";
 
-const purchaseCatalog = [
+type PurchaseCatalogItem = {
+  key: string;
+  label: string;
+  unit: string;
+  category: PurchaseCategory;
+  suggest(people: number): number;
+};
+
+const purchaseCatalog: PurchaseCatalogItem[] = [
   {
     key: "meat",
-    label: "Carne",
-    unit: "kg",
+    label: "Comida principal",
+    unit: "aportes",
     category: PurchaseCategory.FOOD,
-    suggest: (people: number) => Math.max(1, Math.ceil(people * 0.45)),
-  },
-  {
-    key: "bread",
-    label: "Pan",
-    unit: "bolsas",
-    category: PurchaseCategory.FOOD,
-    suggest: (people: number) => Math.max(1, Math.ceil(people / 4)),
+    suggest: () => 1,
   },
   {
     key: "salad",
-    label: "Ensalada",
-    unit: "fuentes",
+    label: "Acompañamientos",
+    unit: "aportes",
     category: PurchaseCategory.FOOD,
-    suggest: (people: number) => Math.max(1, Math.ceil(people / 3)),
+    suggest: () => 1,
+  },
+  {
+    key: "snacks",
+    label: "Snacks",
+    unit: "aportes",
+    category: PurchaseCategory.FOOD,
+    suggest: () => 1,
+  },
+  {
+    key: "dessert",
+    label: "Postre",
+    unit: "aportes",
+    category: PurchaseCategory.FOOD,
+    suggest: () => 1,
   },
   {
     key: "soda",
-    label: "Gaseosas",
-    unit: "botellas de 2 L",
+    label: "Gaseosas y bebidas sin alcohol",
+    unit: "aportes",
     category: PurchaseCategory.DRINKS,
-    suggest: (people: number) => Math.max(1, Math.ceil(people / 2)),
-  },
-  {
-    key: "water",
-    label: "Agua",
-    unit: "botellas de 2 L",
-    category: PurchaseCategory.DRINKS,
-    suggest: (people: number) => Math.max(1, Math.ceil(people / 3)),
+    suggest: () => 1,
   },
   {
     key: "ice",
     label: "Hielo",
     unit: "bolsas",
     category: PurchaseCategory.OTHER,
-    suggest: (people: number) => Math.max(1, Math.ceil(people / 3)),
+    suggest: () => 1,
   },
   {
     key: "charcoal",
-    label: "Carbón",
-    unit: "bolsas",
+    label: "Parrilla y fuego",
+    unit: "aportes",
     category: PurchaseCategory.OTHER,
-    suggest: (people: number) => Math.max(1, Math.ceil(people / 4)),
+    suggest: () => 1,
   },
   {
     key: "beer",
-    label: "Cerveza",
-    unit: "litros",
+    label: "Bebidas con alcohol",
+    unit: "aportes",
     category: PurchaseCategory.ALCOHOL,
-    suggest: (people: number) => Math.max(1, people),
+    suggest: () => 1,
+  },
+  {
+    key: "other",
+    label: "Otros",
+    unit: "aportes",
+    category: PurchaseCategory.OTHER,
+    suggest: () => 1,
   },
 ];
+
+const legacyPurchaseKeys = new Set(["bread", "water", "fernet", "wine"]);
 
 type StoredPurchasePlan = {
   id: string;
@@ -87,6 +115,31 @@ type StoredPurchasePlan = {
     quantity: number;
     category: PurchaseCategory;
     position: number;
+    assignedParticipantId: string | null;
+    assignedAt: Date | null;
+    isReady: boolean;
+    assignee: {
+      id: string;
+      name: string;
+      avatarUrl: string | null;
+    } | null;
+    contributions: Array<{
+      id: string;
+      catalogProductId: string | null;
+      catalogPresentationId: string | null;
+      description: string;
+      quantity: number;
+      unit: string;
+      note: string | null;
+      isReady: boolean;
+      createdAt: Date;
+      updatedAt: Date;
+      participant: {
+        id: string;
+        name: string;
+        avatarUrl: string | null;
+      };
+    }>;
   }>;
 };
 
@@ -94,7 +147,32 @@ type StoredPurchasePlan = {
 export class GatheringsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  create(dto: CreateGatheringDto) {
+  async getPurchaseCatalog() {
+    const products = await this.prisma.catalogProduct.findMany({
+      where: { isActive: true },
+      orderBy: [{ categoryKey: "asc" }, { position: "asc" }, { name: "asc" }],
+      select: {
+        id: true,
+        key: true,
+        categoryKey: true,
+        name: true,
+        brand: true,
+        description: true,
+        visualKey: true,
+        accentColor: true,
+        tags: true,
+        isAlcohol: true,
+        presentations: {
+          where: { isActive: true },
+          orderBy: [{ position: "asc" }, { label: "asc" }],
+          select: { id: true, key: true, label: true, unit: true },
+        },
+      },
+    });
+    return { version: 1, products };
+  }
+
+  async create(dto: CreateGatheringDto, identity: AuthIdentity | null = null) {
     const slug = `${this.slugify(dto.title)}-${randomBytes(3).toString("hex")}`;
     const dailyStartMinutes = dto.dailyStartMinutes ?? 780;
     const dailyEndMinutes = dto.dailyEndMinutes ?? 1440;
@@ -107,29 +185,102 @@ export class GatheringsService {
       );
     }
 
-    return this.prisma.gathering.create({
-      data: {
-        slug,
-        title: dto.title,
-        organizerName: dto.organizerName,
-        locationHint: dto.locationHint,
-        locationLatitude: dto.locationLatitude,
-        locationLongitude: dto.locationLongitude,
-        windowStart: new Date(dto.windowStart),
-        windowEnd: new Date(dto.windowEnd),
-        durationMinutes,
-        dailyStartMinutes,
-        dailyEndMinutes,
-        slotStepMinutes,
-        participants: {
-          create: {
-            name: dto.organizerName,
-            avatarUrl: dto.organizerAvatarUrl,
-            isOrganizer: true,
+    if (dto.templateGatheringId && !identity) {
+      throw new UnauthorizedException(
+        "Necesitás ingresar para duplicar una juntada",
+      );
+    }
+
+    return this.prisma.$transaction(async (transaction) => {
+      const template = dto.templateGatheringId
+        ? await transaction.gathering.findFirst({
+            where: {
+              id: dto.templateGatheringId,
+              participants: {
+                some: {
+                  authUserId: identity!.id,
+                  isOrganizer: true,
+                },
+              },
+            },
+            select: {
+              description: true,
+              purchasePlan: {
+                select: {
+                  participantBaseline: true,
+                  items: {
+                    select: {
+                      key: true,
+                      label: true,
+                      unit: true,
+                      quantity: true,
+                      category: true,
+                      position: true,
+                    },
+                    orderBy: { position: "asc" },
+                  },
+                },
+              },
+            },
+          })
+        : null;
+
+      if (dto.templateGatheringId && !template) {
+        throw new ForbiddenException(
+          "Sólo quien organiza puede duplicar esta juntada",
+        );
+      }
+
+      const gathering = await transaction.gathering.create({
+        data: {
+          slug,
+          title: dto.title,
+          description: template?.description,
+          organizerName: dto.organizerName,
+          locationHint: dto.locationHint,
+          locationLatitude: dto.locationLatitude,
+          locationLongitude: dto.locationLongitude,
+          windowStart: new Date(dto.windowStart),
+          windowEnd: new Date(dto.windowEnd),
+          durationMinutes,
+          dailyStartMinutes,
+          dailyEndMinutes,
+          slotStepMinutes,
+          participants: {
+            create: {
+              name: dto.organizerName,
+              contact: identity?.email,
+              avatarUrl: dto.organizerAvatarUrl,
+              authUserId: identity?.id,
+              isOrganizer: true,
+            },
           },
         },
-      },
-      include: { participants: true },
+        include: { participants: true },
+      });
+
+      if (template?.purchasePlan) {
+        await transaction.purchasePlan.create({
+          data: {
+            gatheringId: gathering.id,
+            includeAlcohol: false,
+            ageConfirmed: false,
+            participantBaseline: template.purchasePlan.participantBaseline,
+            items: {
+              create: template.purchasePlan.items.map((item) => ({
+                key: item.key,
+                label: item.label,
+                unit: item.unit,
+                quantity: item.quantity,
+                category: item.category,
+                position: item.position,
+              })),
+            },
+          },
+        });
+      }
+
+      return gathering;
     });
   }
 
@@ -143,6 +294,8 @@ export class GatheringsService {
             name: true,
             avatarUrl: true,
             isOrganizer: true,
+            dietaryPreferences: true,
+            mealArrangement: true,
             expensesReadyAt: true,
             createdAt: true,
             availabilities: true,
@@ -169,10 +322,7 @@ export class GatheringsService {
     });
   }
 
-  async addGoogleParticipant(
-    gatheringId: string,
-    dto: GoogleParticipantDto,
-  ) {
+  async addGoogleParticipant(gatheringId: string, dto: GoogleParticipantDto) {
     await this.ensureGathering(gatheringId);
     const clientId = process.env.GOOGLE_CLIENT_ID;
     if (!clientId) {
@@ -364,13 +514,70 @@ export class GatheringsService {
       .slice(0, 5);
   }
 
+  async updateDietaryProfile(
+    gatheringId: string,
+    participantId: string,
+    participantToken: string | undefined,
+    dto: UpdateDietaryProfileDto,
+  ) {
+    const participant = await this.prisma.participant.findFirst({
+      where: { id: participantId, gatheringId },
+    });
+    if (!participant) throw new NotFoundException("Participante no encontrado");
+    if (!participantToken || participant.responseToken !== participantToken) {
+      throw new UnauthorizedException(
+        "No podés editar las preferencias de otra persona",
+      );
+    }
+    if (dto.dietaryPreferences.length > 0 && !dto.mealArrangement) {
+      throw new BadRequestException(
+        "Elegí si vas a gestionar tu comida o si el grupo debe buscar una opción",
+      );
+    }
+
+    return this.prisma.participant.update({
+      where: { id: participantId },
+      data: {
+        dietaryPreferences: dto.dietaryPreferences,
+        mealArrangement:
+          dto.dietaryPreferences.length > 0 ? dto.mealArrangement : null,
+      },
+      select: {
+        id: true,
+        name: true,
+        avatarUrl: true,
+        isOrganizer: true,
+        dietaryPreferences: true,
+        mealArrangement: true,
+        expensesReadyAt: true,
+      },
+    });
+  }
+
   async getPurchasePlan(gatheringId: string) {
     const gathering = await this.prisma.gathering.findUnique({
       where: { id: gatheringId },
       select: {
         _count: { select: { participants: true } },
         purchasePlan: {
-          include: { items: { orderBy: { position: "asc" } } },
+          include: {
+            items: {
+              orderBy: { position: "asc" },
+              include: {
+                assignee: {
+                  select: { id: true, name: true, avatarUrl: true },
+                },
+                contributions: {
+                  orderBy: { updatedAt: "desc" },
+                  include: {
+                    participant: {
+                      select: { id: true, name: true, avatarUrl: true },
+                    },
+                  },
+                },
+              },
+            },
+          },
         },
       },
     });
@@ -412,7 +619,11 @@ export class GatheringsService {
       quantities.set(item.key, item.quantity);
     }
     const catalogKeys = new Set(purchaseCatalog.map((item) => item.key));
-    if ([...quantities.keys()].some((key) => !catalogKeys.has(key))) {
+    if (
+      [...quantities.keys()].some(
+        (key) => !catalogKeys.has(key) && !legacyPurchaseKeys.has(key),
+      )
+    ) {
       throw new BadRequestException("La compra contiene un producto inválido");
     }
 
@@ -439,6 +650,9 @@ export class GatheringsService {
         purchaseCatalog.map((item, position) => {
           const quantity =
             quantities.get(item.key) ?? item.suggest(participantCount);
+          const isActive =
+            quantity > 0 &&
+            (item.category !== PurchaseCategory.ALCOHOL || dto.includeAlcohol);
           return transaction.purchaseItem.upsert({
             where: {
               purchasePlanId_key: {
@@ -461,6 +675,11 @@ export class GatheringsService {
               quantity,
               category: item.category,
               position,
+              ...(!isActive && {
+                assignedParticipantId: null,
+                assignedAt: null,
+                isReady: false,
+              }),
             },
           });
         }),
@@ -468,11 +687,384 @@ export class GatheringsService {
 
       return transaction.purchasePlan.findUniqueOrThrow({
         where: { id: savedPlan.id },
-        include: { items: { orderBy: { position: "asc" } } },
+        include: {
+          items: {
+            orderBy: { position: "asc" },
+            include: {
+              assignee: {
+                select: { id: true, name: true, avatarUrl: true },
+              },
+              contributions: {
+                orderBy: { updatedAt: "desc" },
+                include: {
+                  participant: {
+                    select: { id: true, name: true, avatarUrl: true },
+                  },
+                },
+              },
+            },
+          },
+        },
       });
     });
 
     return this.serializePurchasePlan(participantCount, plan);
+  }
+
+  async updatePurchaseResponsibility(
+    gatheringId: string,
+    participantId: string,
+    participantToken: string | undefined,
+    itemKey: string,
+    dto: UpdatePurchaseResponsibilityDto,
+  ) {
+    const participant = await this.prisma.participant.findFirst({
+      where: { id: participantId, gatheringId },
+      include: {
+        gathering: { select: { _count: { select: { participants: true } } } },
+      },
+    });
+    if (!participant) throw new NotFoundException("Participante no encontrado");
+    if (!participantToken || participant.responseToken !== participantToken) {
+      throw new UnauthorizedException("No podés elegir por otra persona");
+    }
+
+    const catalogItem = purchaseCatalog.find((item) => item.key === itemKey);
+    if (!catalogItem) {
+      throw new BadRequestException("La compra contiene un producto inválido");
+    }
+
+    const participantCount = participant.gathering._count.participants;
+    const plan = await this.prisma.$transaction(async (transaction) => {
+      const savedPlan = await transaction.purchasePlan.upsert({
+        where: { gatheringId },
+        create: {
+          gatheringId,
+          participantBaseline: participantCount,
+        },
+        update: {},
+      });
+
+      if (catalogItem.category === PurchaseCategory.ALCOHOL) {
+        if (!savedPlan.includeAlcohol || !savedPlan.ageConfirmed) {
+          throw new BadRequestException(
+            "El alcohol no está habilitado por quien organiza",
+          );
+        }
+        if (dto.action === "claim" && dto.adultConfirmed !== true) {
+          throw new BadRequestException(
+            "Confirmá que sos mayor de 18 años para hacerte cargo",
+          );
+        }
+      }
+
+      const item = await transaction.purchaseItem.upsert({
+        where: {
+          purchasePlanId_key: {
+            purchasePlanId: savedPlan.id,
+            key: catalogItem.key,
+          },
+        },
+        create: {
+          purchasePlanId: savedPlan.id,
+          key: catalogItem.key,
+          label: catalogItem.label,
+          unit: catalogItem.unit,
+          quantity: catalogItem.suggest(participantCount),
+          category: catalogItem.category,
+          position: purchaseCatalog.indexOf(catalogItem),
+        },
+        update: {
+          label: catalogItem.label,
+          unit: catalogItem.unit,
+          category: catalogItem.category,
+          position: purchaseCatalog.indexOf(catalogItem),
+        },
+      });
+
+      if (item.quantity < 1) {
+        throw new BadRequestException(
+          "Este producto no está activo en la compra",
+        );
+      }
+
+      await this.applyPurchaseResponsibilityAction(
+        transaction,
+        item.id,
+        item.assignedParticipantId,
+        participant,
+        dto.action,
+      );
+
+      return transaction.purchasePlan.findUniqueOrThrow({
+        where: { id: savedPlan.id },
+        include: {
+          items: {
+            orderBy: { position: "asc" },
+            include: {
+              assignee: {
+                select: { id: true, name: true, avatarUrl: true },
+              },
+              contributions: {
+                orderBy: { updatedAt: "desc" },
+                include: {
+                  participant: {
+                    select: { id: true, name: true, avatarUrl: true },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+    });
+
+    return {
+      plan: this.serializePurchasePlan(participantCount, plan),
+      activity: {
+        action: dto.action,
+        itemKey: catalogItem.key,
+        itemLabel: catalogItem.label,
+        participantId: participant.id,
+        participantName: participant.name,
+      },
+    };
+  }
+
+  async upsertPurchaseContribution(
+    gatheringId: string,
+    participantId: string,
+    participantToken: string | undefined,
+    itemKey: string,
+    dto: UpsertPurchaseContributionDto,
+  ) {
+    const participant = await this.requirePurchaseParticipant(
+      gatheringId,
+      participantId,
+      participantToken,
+    );
+    const catalogItem = purchaseCatalog.find((item) => item.key === itemKey);
+    if (!catalogItem) {
+      throw new BadRequestException("La categoría de compra no es válida");
+    }
+    const catalogProduct = dto.catalogProductId
+      ? await this.prisma.catalogProduct.findFirst({
+          where: {
+            id: dto.catalogProductId,
+            categoryKey: itemKey,
+            isActive: true,
+          },
+        })
+      : null;
+    if (dto.catalogProductId && !catalogProduct) {
+      throw new BadRequestException(
+        "Ese producto no pertenece a esta categoría",
+      );
+    }
+    const catalogPresentation = dto.catalogPresentationId
+      ? await this.prisma.catalogPresentation.findFirst({
+          where: {
+            id: dto.catalogPresentationId,
+            productId: catalogProduct?.id ?? "",
+            isActive: true,
+          },
+        })
+      : null;
+    if (dto.catalogPresentationId && !catalogPresentation) {
+      throw new BadRequestException(
+        "La presentación no pertenece al producto elegido",
+      );
+    }
+    if (catalogProduct && !catalogPresentation) {
+      throw new BadRequestException("Elegí una presentación para el producto");
+    }
+
+    const description = catalogProduct?.name ?? dto.description?.trim() ?? "";
+    const unit = catalogPresentation?.unit ?? dto.unit?.trim() ?? "";
+    if (description.length < 2) {
+      throw new BadRequestException("Contanos qué vas a llevar");
+    }
+    if (!unit) {
+      throw new BadRequestException("Indicá la presentación del aporte");
+    }
+
+    await this.prisma.$transaction(async (transaction) => {
+      const plan = await transaction.purchasePlan.upsert({
+        where: { gatheringId },
+        create: {
+          gatheringId,
+          participantBaseline: participant.gathering._count.participants,
+        },
+        update: {},
+      });
+      if (catalogItem.category === PurchaseCategory.ALCOHOL) {
+        if (!plan.includeAlcohol || !plan.ageConfirmed) {
+          throw new BadRequestException(
+            "Las bebidas con alcohol no están habilitadas por quien organiza",
+          );
+        }
+        if (dto.adultConfirmed !== true) {
+          throw new BadRequestException(
+            "Confirmá que sos mayor de 18 años para sumar este aporte",
+          );
+        }
+      }
+
+      const item = await transaction.purchaseItem.upsert({
+        where: {
+          purchasePlanId_key: {
+            purchasePlanId: plan.id,
+            key: catalogItem.key,
+          },
+        },
+        create: {
+          purchasePlanId: plan.id,
+          key: catalogItem.key,
+          label: catalogItem.label,
+          unit: catalogItem.unit,
+          quantity: catalogItem.suggest(
+            participant.gathering._count.participants,
+          ),
+          category: catalogItem.category,
+          position: purchaseCatalog.indexOf(catalogItem),
+        },
+        update: {
+          label: catalogItem.label,
+          unit: catalogItem.unit,
+          category: catalogItem.category,
+          position: purchaseCatalog.indexOf(catalogItem),
+        },
+      });
+
+      await transaction.purchaseContribution.upsert({
+        where: {
+          purchaseItemId_participantId: {
+            purchaseItemId: item.id,
+            participantId,
+          },
+        },
+        create: {
+          purchaseItemId: item.id,
+          participantId,
+          catalogProductId: catalogProduct?.id ?? null,
+          catalogPresentationId: catalogPresentation?.id ?? null,
+          description,
+          quantity: dto.quantity,
+          unit,
+          note: dto.note?.trim() || null,
+        },
+        update: {
+          catalogProductId: catalogProduct?.id ?? null,
+          catalogPresentationId: catalogPresentation?.id ?? null,
+          description,
+          quantity: dto.quantity,
+          unit,
+          note: dto.note?.trim() || null,
+          isReady: false,
+        },
+      });
+    });
+
+    return {
+      plan: await this.getPurchasePlan(gatheringId),
+      activity: {
+        action: "contribute" as const,
+        itemKey,
+        itemLabel: catalogItem.label,
+        participantId,
+        participantName: participant.name,
+      },
+    };
+  }
+
+  async updatePurchaseContributionStatus(
+    gatheringId: string,
+    participantId: string,
+    participantToken: string | undefined,
+    contributionId: string,
+    dto: UpdatePurchaseContributionStatusDto,
+  ) {
+    const participant = await this.requirePurchaseParticipant(
+      gatheringId,
+      participantId,
+      participantToken,
+    );
+    const contribution = await this.prisma.purchaseContribution.findUnique({
+      where: { id: contributionId },
+      include: {
+        purchaseItem: { include: { purchasePlan: true } },
+      },
+    });
+    if (
+      !contribution ||
+      contribution.purchaseItem.purchasePlan.gatheringId !== gatheringId
+    ) {
+      throw new NotFoundException("Aporte no encontrado");
+    }
+    if (
+      contribution.participantId !== participantId &&
+      !participant.isOrganizer
+    ) {
+      throw new ForbiddenException("Sólo quien aportó puede marcarlo listo");
+    }
+    await this.prisma.purchaseContribution.update({
+      where: { id: contributionId },
+      data: { isReady: dto.isReady },
+    });
+    return {
+      plan: await this.getPurchasePlan(gatheringId),
+      activity: {
+        action: dto.isReady ? ("ready" as const) : ("pending" as const),
+        itemKey: contribution.purchaseItem.key,
+        itemLabel: contribution.purchaseItem.label,
+        participantId,
+        participantName: participant.name,
+      },
+    };
+  }
+
+  async deletePurchaseContribution(
+    gatheringId: string,
+    participantId: string,
+    participantToken: string | undefined,
+    contributionId: string,
+  ) {
+    const participant = await this.requirePurchaseParticipant(
+      gatheringId,
+      participantId,
+      participantToken,
+    );
+    const contribution = await this.prisma.purchaseContribution.findUnique({
+      where: { id: contributionId },
+      include: {
+        purchaseItem: { include: { purchasePlan: true } },
+      },
+    });
+    if (
+      !contribution ||
+      contribution.purchaseItem.purchasePlan.gatheringId !== gatheringId
+    ) {
+      throw new NotFoundException("Aporte no encontrado");
+    }
+    if (
+      contribution.participantId !== participantId &&
+      !participant.isOrganizer
+    ) {
+      throw new ForbiddenException("Sólo quien aportó puede quitarlo");
+    }
+    await this.prisma.purchaseContribution.delete({
+      where: { id: contributionId },
+    });
+    return {
+      plan: await this.getPurchasePlan(gatheringId),
+      activity: {
+        action: "remove" as const,
+        itemKey: contribution.purchaseItem.key,
+        itemLabel: contribution.purchaseItem.label,
+        participantId,
+        participantName: participant.name,
+      },
+    };
   }
 
   async addExpense(
@@ -486,7 +1078,9 @@ export class GatheringsService {
     });
     if (!participant) throw new NotFoundException("Participante no encontrado");
     if (!participantToken || participant.responseToken !== participantToken) {
-      throw new UnauthorizedException("No podés cargar gastos por otra persona");
+      throw new UnauthorizedException(
+        "No podés cargar gastos por otra persona",
+      );
     }
 
     return this.prisma.$transaction(async (transaction) => {
@@ -574,7 +1168,8 @@ export class GatheringsService {
         id: confirmation.id,
         fromParticipantId: confirmation.fromParticipantId,
         fromName:
-          participantNames.get(confirmation.fromParticipantId) ?? "Participante",
+          participantNames.get(confirmation.fromParticipantId) ??
+          "Participante",
         toParticipantId: confirmation.toParticipantId,
         toName:
           participantNames.get(confirmation.toParticipantId) ?? "Participante",
@@ -655,16 +1250,10 @@ export class GatheringsService {
 
     let debtorIndex = 0;
     let creditorIndex = 0;
-    while (
-      debtorIndex < debtors.length &&
-      creditorIndex < creditors.length
-    ) {
+    while (debtorIndex < debtors.length && creditorIndex < creditors.length) {
       const debtor = debtors[debtorIndex];
       const creditor = creditors[creditorIndex];
-      const amountCents = Math.min(
-        debtor.amountCents,
-        creditor.amountCents,
-      );
+      const amountCents = Math.min(debtor.amountCents, creditor.amountCents);
       const id = this.transferKey(
         debtor.participantId,
         creditor.participantId,
@@ -780,6 +1369,140 @@ export class GatheringsService {
     if (!gathering) throw new NotFoundException("Juntada no encontrada");
   }
 
+  private async requirePurchaseParticipant(
+    gatheringId: string,
+    participantId: string,
+    participantToken: string | undefined,
+  ) {
+    const participant = await this.prisma.participant.findFirst({
+      where: { id: participantId, gatheringId },
+      include: {
+        gathering: { select: { _count: { select: { participants: true } } } },
+      },
+    });
+    if (!participant) throw new NotFoundException("Participante no encontrado");
+    if (!participantToken || participant.responseToken !== participantToken) {
+      throw new UnauthorizedException("No podés editar aportes de otra persona");
+    }
+    return participant;
+  }
+
+  private async applyPurchaseResponsibilityAction(
+    transaction: Prisma.TransactionClient,
+    itemId: string,
+    assignedParticipantId: string | null,
+    participant: { id: string; isOrganizer: boolean },
+    action: PurchaseResponsibilityAction,
+  ) {
+    if (action === "claim") {
+      if (assignedParticipantId === participant.id) return;
+      const claimed = await transaction.purchaseItem.updateMany({
+        where: { id: itemId, assignedParticipantId: null },
+        data: {
+          assignedParticipantId: participant.id,
+          assignedAt: new Date(),
+          isReady: false,
+        },
+      });
+      if (claimed.count === 0) {
+        const current = await transaction.purchaseItem.findUniqueOrThrow({
+          where: { id: itemId },
+          select: { assignedParticipantId: true },
+        });
+        if (current.assignedParticipantId !== participant.id) {
+          throw new ConflictException(
+            "Otra persona acaba de elegir este producto",
+          );
+        }
+      }
+      return;
+    }
+
+    if (!assignedParticipantId) {
+      if (action === "release") return;
+      throw new BadRequestException("Primero alguien debe hacerse cargo");
+    }
+    if (assignedParticipantId !== participant.id && !participant.isOrganizer) {
+      throw new ForbiddenException(
+        "Sólo quien lo eligió o quien organiza puede cambiarlo",
+      );
+    }
+
+    if (action === "release") {
+      await transaction.purchaseItem.updateMany({
+        where: { id: itemId, assignedParticipantId },
+        data: {
+          assignedParticipantId: null,
+          assignedAt: null,
+          isReady: false,
+        },
+      });
+      return;
+    }
+
+    await transaction.purchaseItem.updateMany({
+      where: { id: itemId, assignedParticipantId },
+      data: { isReady: action === "ready" },
+    });
+  }
+
+  async addAuthenticatedParticipant(
+    gatheringId: string,
+    identity: AuthIdentity,
+    dto: AuthParticipantDto,
+  ) {
+    await this.ensureGathering(gatheringId);
+    return this.prisma.participant.upsert({
+      where: {
+        gatheringId_authUserId: {
+          gatheringId,
+          authUserId: identity.id,
+        },
+      },
+      create: {
+        gatheringId,
+        authUserId: identity.id,
+        name: dto.name?.trim() || this.nameFromIdentity(identity),
+        contact: identity.email,
+        avatarUrl: dto.avatarUrl,
+      },
+      update: {},
+    });
+  }
+
+  async linkAuthenticatedParticipant(
+    gatheringId: string,
+    participantId: string,
+    participantToken: string | undefined,
+    identity: AuthIdentity,
+  ) {
+    const participant = await this.prisma.participant.findFirst({
+      where: { id: participantId, gatheringId },
+    });
+    if (!participant) throw new NotFoundException("Participante no encontrado");
+    if (!participantToken || participant.responseToken !== participantToken) {
+      throw new UnauthorizedException("No podés vincular otra participación");
+    }
+
+    const existing = await this.prisma.participant.findUnique({
+      where: {
+        gatheringId_authUserId: {
+          gatheringId,
+          authUserId: identity.id,
+        },
+      },
+    });
+    if (existing) return existing;
+
+    return this.prisma.participant.update({
+      where: { id: participant.id },
+      data: {
+        authUserId: identity.id,
+        contact: participant.contact ?? identity.email,
+      },
+    });
+  }
+
   private slugify(value: string) {
     return value
       .normalize("NFD")
@@ -788,6 +1511,11 @@ export class GatheringsService {
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/(^-|-$)/g, "")
       .slice(0, 48);
+  }
+
+  private nameFromIdentity(identity: AuthIdentity) {
+    const emailName = identity.email?.split("@")[0]?.trim();
+    return emailName || "Invitado";
   }
 
   private transferKey(
@@ -823,6 +1551,23 @@ export class GatheringsService {
           position,
           quantity: stored?.quantity ?? item.suggest(participantCount),
           suggestedQuantity: item.suggest(participantCount),
+          assignedTo: stored?.assignee ?? null,
+          assignedAt: stored?.assignedAt ?? null,
+          isReady: stored?.isReady ?? false,
+          contributions:
+            stored?.contributions?.map((contribution) => ({
+              id: contribution.id,
+              catalogProductId: contribution.catalogProductId,
+              catalogPresentationId: contribution.catalogPresentationId,
+              description: contribution.description,
+              quantity: contribution.quantity,
+              unit: contribution.unit,
+              note: contribution.note,
+              isReady: contribution.isReady,
+              createdAt: contribution.createdAt,
+              updatedAt: contribution.updatedAt,
+              participant: contribution.participant,
+            })) ?? [],
         };
       }),
     };

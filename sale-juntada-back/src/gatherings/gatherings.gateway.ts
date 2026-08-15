@@ -126,8 +126,29 @@ export class GatheringsGateway implements OnGatewayDisconnect {
     });
   }
 
-  purchaseChanged(gatheringId: string) {
-    this.server.to(this.room(gatheringId)).emit("purchase:changed");
+  dietaryChanged(gatheringId: string, participantName: string) {
+    this.server.to(this.room(gatheringId)).emit("dietary:changed", {
+      participantName,
+    });
+  }
+
+  purchaseChanged(
+    gatheringId: string,
+    activity?: {
+      action:
+        | "claim"
+        | "release"
+        | "ready"
+        | "pending"
+        | "contribute"
+        | "remove";
+      itemKey: string;
+      itemLabel: string;
+      participantId: string;
+      participantName: string;
+    },
+  ) {
+    this.server.to(this.room(gatheringId)).emit("purchase:changed", activity);
   }
 
   private broadcastPresence(gatheringId: string) {

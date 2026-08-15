@@ -11,6 +11,7 @@ Sale Juntada ayuda a coordinar una reunión con amigos, familia o equipo de trab
 - Recibe disponibilidad individual y calcula la mejor coincidencia
 - Muestra los horarios más probables según el grupo
 - Soporta cierre de la propuesta, confirmación y enlace para compartir
+- Sugiere la compra y permite que cada participante elija en vivo qué va a llevar
 - Gestiona gastos y liquidaciones entre participantes
 - Prepara integración con Google Calendar para automatizar disponibilidad
 
@@ -124,14 +125,20 @@ Los secretos se mantienen en `sale-juntada-back/.env`, quedan fuera del reposito
 - cargar disponibilidad manual o tentativa
 - ordenar las mejores coincidencias
 - preparar confirmación y compartir enlace
+- armar una mesa visual de aportes con responsables y estado listo en tiempo real
+- elegir cerveza, fernet, vino, postre y otros productos como misiones separadas
+- registrar necesidades sin gluten, veganas o vegetarianas y cómo se resolverá cada menú
+- jugar rondas locales de rompehielo, prendas y brindis responsable +18
 - administrar gastos y saldos
 
 ## 🔮 Próximas integraciones
 
 - Google Calendar: importar bloques ocupados de forma opcional
-- sincronización de disponibilidad por participante
+- permitir productos personalizados y varias personas responsables por un mismo producto
 - confirmación del evento final en el calendario personal
 - refinamiento del algoritmo de matching y cierre de reuniones
+- sincronizar una ronda de minijuegos entre teléfonos, con moderación y mazos configurables
+- incorporar comercios de Tucumán recién en una etapa posterior, con consentimiento y datos verificables
 
 El alcance funcional, la estrategia de privacidad y los criterios de aceptación quedan detallados en [docs/google-calendar.md](docs/google-calendar.md).
 

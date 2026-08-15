@@ -14,6 +14,7 @@ import { io, Socket } from "socket.io-client";
 import {
   ExpenseSettlement,
   Gathering,
+  GatheringHistoryItem,
   gatheringService,
   Match,
   SOCKET_URL,
@@ -26,6 +27,9 @@ import {
 } from "./components/MobileExperience";
 import { AnimatedDialog } from "./components/AnimatedDialog";
 import { AnimatedToast } from "./components/AnimatedToast";
+import { AccountDialog } from "./components/AccountDialog";
+import { PartyGames } from "./components/PartyGames";
+import { useAuth } from "./auth/useAuth";
 import { useActiveSection } from "./hooks/useActiveSection";
 import {
   listItemVariants,
@@ -51,7 +55,6 @@ type Slot = {
 };
 
 const supportAlias = import.meta.env.VITE_SUPPORT_ALIAS?.trim();
-const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID?.trim();
 const avatarPresets = ["🦆", "🐸", "🦖", "🦥", "🦝", "🍕"];
 const timeWindowPresets = [
   { label: "Almuerzo", icon: "☀️", start: "11:00", end: "17:00" },
@@ -60,19 +63,79 @@ const timeWindowPresets = [
 ];
 
 const demoSlots: Slot[] = [
-  { id: "fri-21", day: "Vie", date: "24 Jul", time: "21:00", startsAt: "2026-07-24T21:00:00-03:00", endsAt: "2026-07-25T00:00:00-03:00" },
-  { id: "sat-13", day: "Sáb", date: "25 Jul", time: "13:00", startsAt: "2026-07-25T13:00:00-03:00", endsAt: "2026-07-25T16:00:00-03:00" },
-  { id: "sat-21", day: "Sáb", date: "25 Jul", time: "21:00", startsAt: "2026-07-25T21:00:00-03:00", endsAt: "2026-07-26T00:00:00-03:00" },
-  { id: "sun-13", day: "Dom", date: "26 Jul", time: "13:00", startsAt: "2026-07-26T13:00:00-03:00", endsAt: "2026-07-26T16:00:00-03:00" },
-  { id: "sun-20", day: "Dom", date: "26 Jul", time: "20:00", startsAt: "2026-07-26T20:00:00-03:00", endsAt: "2026-07-26T23:00:00-03:00" },
+  {
+    id: "fri-21",
+    day: "Vie",
+    date: "24 Jul",
+    time: "21:00",
+    startsAt: "2026-07-24T21:00:00-03:00",
+    endsAt: "2026-07-25T00:00:00-03:00",
+  },
+  {
+    id: "sat-13",
+    day: "Sáb",
+    date: "25 Jul",
+    time: "13:00",
+    startsAt: "2026-07-25T13:00:00-03:00",
+    endsAt: "2026-07-25T16:00:00-03:00",
+  },
+  {
+    id: "sat-21",
+    day: "Sáb",
+    date: "25 Jul",
+    time: "21:00",
+    startsAt: "2026-07-25T21:00:00-03:00",
+    endsAt: "2026-07-26T00:00:00-03:00",
+  },
+  {
+    id: "sun-13",
+    day: "Dom",
+    date: "26 Jul",
+    time: "13:00",
+    startsAt: "2026-07-26T13:00:00-03:00",
+    endsAt: "2026-07-26T16:00:00-03:00",
+  },
+  {
+    id: "sun-20",
+    day: "Dom",
+    date: "26 Jul",
+    time: "20:00",
+    startsAt: "2026-07-26T20:00:00-03:00",
+    endsAt: "2026-07-26T23:00:00-03:00",
+  },
 ];
 
 const friends = [
-  { name: "Sofi", initials: "SO", color: "peach", available: ["fri-21", "sat-21", "sun-20"] },
-  { name: "Fede", initials: "FE", color: "blue", available: ["sat-13", "sat-21", "sun-13"] },
-  { name: "Mica", initials: "MI", color: "purple", available: ["fri-21", "sat-21", "sun-13", "sun-20"] },
-  { name: "Nico", initials: "NI", color: "green", available: ["sat-13", "sat-21", "sun-20"] },
-  { name: "Lu", initials: "LU", color: "yellow", available: ["fri-21", "sat-21", "sun-20"] },
+  {
+    name: "Sofi",
+    initials: "SO",
+    color: "peach",
+    available: ["fri-21", "sat-21", "sun-20"],
+  },
+  {
+    name: "Fede",
+    initials: "FE",
+    color: "blue",
+    available: ["sat-13", "sat-21", "sun-13"],
+  },
+  {
+    name: "Mica",
+    initials: "MI",
+    color: "purple",
+    available: ["fri-21", "sat-21", "sun-13", "sun-20"],
+  },
+  {
+    name: "Nico",
+    initials: "NI",
+    color: "green",
+    available: ["sat-13", "sat-21", "sun-20"],
+  },
+  {
+    name: "Lu",
+    initials: "LU",
+    color: "yellow",
+    available: ["fri-21", "sat-21", "sun-20"],
+  },
 ];
 
 function SparkIcon() {
@@ -105,6 +168,15 @@ function minutesFromTime(value: string) {
   return hours * 60 + minutes;
 }
 
+function timeFromMinutes(value: number) {
+  const normalized = value % 1440;
+  const hours = Math.floor(normalized / 60)
+    .toString()
+    .padStart(2, "0");
+  const minutes = (normalized % 60).toString().padStart(2, "0");
+  return `${hours}:${minutes}`;
+}
+
 function dateAtMinutes(date: string, minutes: number) {
   const value = new Date(`${date}T00:00:00`);
   value.setMinutes(minutes);
@@ -122,7 +194,10 @@ function ParticipantAvatar({
 }) {
   if (avatarUrl?.startsWith("emoji:")) {
     return (
-      <span className={`person-avatar avatar-emoji ${color}`} aria-label={`Avatar de ${name}`}>
+      <span
+        className={`person-avatar avatar-emoji ${color}`}
+        aria-label={`Avatar de ${name}`}
+      >
         {avatarUrl.slice(6)}
       </span>
     );
@@ -156,17 +231,9 @@ async function makeAvatarThumbnail(file: File) {
     const canvas = document.createElement("canvas");
     canvas.width = 192;
     canvas.height = 192;
-    canvas.getContext("2d")?.drawImage(
-      image,
-      sourceX,
-      sourceY,
-      side,
-      side,
-      0,
-      0,
-      192,
-      192,
-    );
+    canvas
+      .getContext("2d")
+      ?.drawImage(image, sourceX, sourceY, side, side, 0, 0, 192, 192);
     return canvas.toDataURL("image/jpeg", 0.68);
   } finally {
     URL.revokeObjectURL(objectUrl);
@@ -213,10 +280,12 @@ function storeParticipantSession(
   );
 }
 
-function readParticipantSession(gatheringId: string): ParticipantSession | null {
+function readParticipantSession(
+  gatheringId: string,
+): ParticipantSession | null {
   try {
     const value = localStorage.getItem(sessionKey(gatheringId));
-    return value ? JSON.parse(value) as ParticipantSession : null;
+    return value ? (JSON.parse(value) as ParticipantSession) : null;
   } catch {
     return null;
   }
@@ -247,11 +316,15 @@ function buildGatheringSlots(gathering: Gathering): Slot[] {
 
       const day = new Intl.DateTimeFormat("es-AR", {
         weekday: "short",
-      }).format(startsAt).replace(".", "");
+      })
+        .format(startsAt)
+        .replace(".", "");
       const date = new Intl.DateTimeFormat("es-AR", {
         day: "numeric",
         month: "short",
-      }).format(startsAt).replace(".", "");
+      })
+        .format(startsAt)
+        .replace(".", "");
       const time = new Intl.DateTimeFormat("es-AR", {
         hour: "2-digit",
         minute: "2-digit",
@@ -276,10 +349,20 @@ function buildGatheringSlots(gathering: Gathering): Slot[] {
 export default function Home() {
   const locationState = useLocation();
   const navigate = useNavigate();
+  const { user, accessToken, isLoading: isLoadingAuth } = useAuth();
   const [eventName, setEventName] = useState("Asado con los pibes");
   const [location, setLocation] = useState("Yerba Buena");
-  const [yourSlots, setYourSlots] = useState<string[]>(["fri-21", "sat-21", "sun-20"]);
+  const [yourSlots, setYourSlots] = useState<string[]>([
+    "fri-21",
+    "sat-21",
+    "sun-20",
+  ]);
   const [showCreate, setShowCreate] = useState(false);
+  const [createTitle, setCreateTitle] = useState("Asado con los pibes");
+  const [createOrganizerName, setCreateOrganizerName] = useState("");
+  const [templateGatheringId, setTemplateGatheringId] = useState<string | null>(
+    null,
+  );
   const [createFrom, setCreateFrom] = useState(() => dateDaysFromNow(1));
   const [createTo, setCreateTo] = useState(() => dateDaysFromNow(3));
   const [createStartTime, setCreateStartTime] = useState("19:00");
@@ -290,13 +373,16 @@ export default function Home() {
   const [showResults, setShowResults] = useState(false);
   const [confirmedSlot, setConfirmedSlot] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
-  const [activeGathering, setActiveGathering] = useState<Gathering | null>(null);
+  const [activeGathering, setActiveGathering] = useState<Gathering | null>(
+    null,
+  );
   const [matches, setMatches] = useState<Match[]>([]);
   const [isLoadingGathering, setIsLoadingGathering] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSavingAvailability, setIsSavingAvailability] = useState(false);
   const [apiError, setApiError] = useState("");
   const [showJoin, setShowJoin] = useState(false);
+  const [showAccount, setShowAccount] = useState(false);
   const [selectedAvatar, setSelectedAvatar] = useState("emoji:🦆");
   const [isPreparingAvatar, setIsPreparingAvatar] = useState(false);
   const [participantSession, setParticipantSession] =
@@ -319,19 +405,111 @@ export default function Home() {
   const [purchaseRevision, setPurchaseRevision] = useState(0);
   const socketRef = useRef<Socket | null>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const googleButtonRef = useRef<HTMLDivElement | null>(null);
   const activeSection = useActiveSection();
   const showNotice = useCallback((message: string) => {
     setNotice(message);
     window.setTimeout(() => setNotice(""), 2800);
   }, []);
+  const authName = String(
+    user?.user_metadata.full_name ??
+      user?.user_metadata.name ??
+      user?.email?.split("@")[0] ??
+      "Tu cuenta",
+  );
+  const authAvatarValue =
+    user?.user_metadata.avatar_url ?? user?.user_metadata.picture;
+  const authAvatarUrl =
+    typeof authAvatarValue === "string" ? authAvatarValue : null;
+
+  const startNewGathering = () => {
+    setTemplateGatheringId(null);
+    setCreateTitle("Asado con los pibes");
+    setCreateOrganizerName(user ? authName : "");
+    setCreateFrom(dateDaysFromNow(1));
+    setCreateTo(dateDaysFromNow(3));
+    setCreateStartTime("19:00");
+    setCreateEndTime("02:00");
+    setCreateDuration(180);
+    setSelectedLocation(null);
+    if (authAvatarUrl) setSelectedAvatar(authAvatarUrl);
+    setApiError("");
+    setShowCreate(true);
+  };
+
+  const openGatheringFromHistory = (item: GatheringHistoryItem) => {
+    storeParticipantSession(
+      item.id,
+      item.participant.id,
+      item.participant.responseToken,
+    );
+    setShowAccount(false);
+    navigate(`/j/${item.slug}`);
+  };
+
+  const duplicateGathering = async (item: GatheringHistoryItem) => {
+    setApiError("");
+    try {
+      const source = await gatheringService.getBySlug(item.slug);
+      const sourceStart = new Date(source.windowStart);
+      const sourceEnd = new Date(source.windowEnd);
+      if ((source.dailyEndMinutes ?? 1440) >= 1440) {
+        sourceEnd.setDate(sourceEnd.getDate() - 1);
+      }
+      const daySpan = Math.max(
+        0,
+        Math.round(
+          (new Date(dateInputValue(sourceEnd)).getTime() -
+            new Date(dateInputValue(sourceStart)).getTime()) /
+            86_400_000,
+        ),
+      );
+      const nextStart = new Date();
+      nextStart.setDate(nextStart.getDate() + 1);
+      const nextEnd = new Date(nextStart);
+      nextEnd.setDate(nextEnd.getDate() + daySpan);
+
+      setTemplateGatheringId(source.id);
+      setCreateTitle(source.title);
+      setCreateOrganizerName(authName);
+      setCreateFrom(dateInputValue(nextStart));
+      setCreateTo(dateInputValue(nextEnd));
+      setCreateStartTime(timeFromMinutes(source.dailyStartMinutes ?? 780));
+      setCreateEndTime(timeFromMinutes(source.dailyEndMinutes ?? 1440));
+      setCreateDuration(source.durationMinutes);
+      setSelectedLocation(
+        source.locationHint &&
+          source.locationLatitude != null &&
+          source.locationLongitude != null
+          ? {
+              label: source.locationHint,
+              latitude: source.locationLatitude,
+              longitude: source.locationLongitude,
+            }
+          : null,
+      );
+      if (authAvatarUrl) setSelectedAvatar(authAvatarUrl);
+      setShowAccount(false);
+      setShowCreate(true);
+      showNotice("Copiamos la configuración. Revisá las nuevas fechas.");
+    } catch (error) {
+      setApiError(
+        error instanceof Error
+          ? error.message
+          : "No pudimos preparar la copia.",
+      );
+      setShowAccount(false);
+    }
+  };
 
   const slots = useMemo(
-    () => activeGathering ? buildGatheringSlots(activeGathering) : demoSlots,
+    () => (activeGathering ? buildGatheringSlots(activeGathering) : demoSlots),
     [activeGathering],
   );
   const slotGroups = useMemo(() => {
-    const groups = new Map<string, { day: string; date: string; slots: Slot[] }>();
+    const groups = new Map<
+      string,
+      { day: string; date: string; slots: Slot[] }
+    >();
     for (const slot of slots) {
       const key = `${slot.day}-${slot.date}`;
       const group = groups.get(key) ?? {
@@ -399,7 +577,9 @@ export default function Home() {
       .catch((error: unknown) => {
         if (!cancelled) {
           setApiError(
-            error instanceof Error ? error.message : "No pudimos abrir esta juntada.",
+            error instanceof Error
+              ? error.message
+              : "No pudimos abrir esta juntada.",
           );
         }
       })
@@ -412,112 +592,34 @@ export default function Home() {
     };
   }, [locationState.pathname]);
 
+  const activeGatheringId = activeGathering?.id;
+  const sessionParticipantId = participantSession?.participantId;
+  const sessionResponseToken = participantSession?.responseToken;
+
   useEffect(() => {
-    if (!showJoin || !activeGathering || !googleClientId) return;
-    let cancelled = false;
-
-    const renderGoogleButton = () => {
-      const google = (window as typeof window & {
-        google?: {
-          accounts: {
-            id: {
-              initialize(options: {
-                client_id: string;
-                callback(response: { credential: string }): void;
-              }): void;
-              renderButton(
-                element: HTMLElement,
-                options: Record<string, string | number>,
-              ): void;
-            };
-          };
-        };
-      }).google;
-      if (!google || !googleButtonRef.current || cancelled) return;
-
-      google.accounts.id.initialize({
-        client_id: googleClientId,
-        callback: async ({ credential }) => {
-          setIsSubmitting(true);
-          setApiError("");
-          try {
-            const participant = await gatheringService.addGoogleParticipant(
-              activeGathering.id,
-              credential,
-            );
-            if (!participant.responseToken) {
-              throw new Error("Google no pudo crear tu acceso.");
-            }
-            const session = {
-              participantId: participant.id,
-              responseToken: participant.responseToken,
-            };
-            storeParticipantSession(
-              activeGathering.id,
-              session.participantId,
-              session.responseToken,
-            );
-            setParticipantSession(session);
-            setActiveGathering((current) => {
-              if (!current) return current;
-              const alreadyExists = current.participants.some(
-                (candidate) => candidate.id === participant.id,
-              );
-              return alreadyExists
-                ? current
-                : {
-                    ...current,
-                    participants: [...current.participants, participant],
-                  };
-            });
-            setYourSlots(
-              participant.availabilities
-                ?.filter((availability) => availability.kind === "AVAILABLE")
-                .map((availability) => availability.startsAt) ?? [],
-            );
-            setShowJoin(false);
-            setNotice(`¡Listo, ${participant.name}! Entraste con Google.`);
-            window.setTimeout(() => setNotice(""), 2800);
-          } catch (error) {
-            setApiError(
-              error instanceof Error
-                ? error.message
-                : "No pudimos ingresar con Google.",
-            );
-          } finally {
-            setIsSubmitting(false);
-          }
-        },
+    if (
+      !activeGatheringId ||
+      !sessionParticipantId ||
+      !sessionResponseToken ||
+      !accessToken
+    )
+      return;
+    void gatheringService
+      .linkAuthenticatedParticipant(
+        activeGatheringId,
+        sessionParticipantId,
+        sessionResponseToken,
+        accessToken,
+      )
+      .catch(() => {
+        // La vinculación mejora la recuperación, pero no debe interrumpir la juntada.
       });
-      googleButtonRef.current.replaceChildren();
-      google.accounts.id.renderButton(googleButtonRef.current, {
-        theme: "outline",
-        size: "large",
-        shape: "pill",
-        text: "continue_with",
-        width: 320,
-        locale: "es",
-      });
-    };
-
-    const existingScript = document.querySelector<HTMLScriptElement>(
-      'script[data-sale-juntada-google="true"]',
-    );
-    if (existingScript) {
-      renderGoogleButton();
-    } else {
-      const script = document.createElement("script");
-      script.src = "https://accounts.google.com/gsi/client";
-      script.async = true;
-      script.dataset.saleJuntadaGoogle = "true";
-      script.addEventListener("load", renderGoogleButton, { once: true });
-      document.head.appendChild(script);
-    }
-
-    return () => {
-      cancelled = true;
-    };
-  }, [showJoin, activeGathering]);
+  }, [
+    accessToken,
+    activeGatheringId,
+    sessionParticipantId,
+    sessionResponseToken,
+  ]);
 
   useEffect(() => {
     if (!activeGathering) return;
@@ -587,9 +689,44 @@ export default function Home() {
     );
     socket.on("expenses:changed", refreshExpenses);
     socket.on("transfers:changed", refreshExpenses);
-    socket.on("purchase:changed", () => {
-      setPurchaseRevision((current) => current + 1);
-    });
+    socket.on(
+      "dietary:changed",
+      async (payload?: { participantName?: string }) => {
+        const refreshed = await gatheringService.getBySlug(
+          activeGathering.slug,
+        );
+        setActiveGathering(refreshed);
+        if (
+          payload?.participantName &&
+          payload.participantName !== participant?.name
+        ) {
+          setNotice(
+            `${payload.participantName} actualizó sus necesidades de comida.`,
+          );
+          window.setTimeout(() => setNotice(""), 2800);
+        }
+      },
+    );
+    socket.on(
+      "purchase:changed",
+      (activity?: {
+        action: "claim" | "release" | "ready" | "pending";
+        itemLabel: string;
+        participantId: string;
+        participantName: string;
+      }) => {
+        setPurchaseRevision((current) => current + 1);
+        if (!activity || activity.participantId === participant?.id) return;
+        const messages = {
+          claim: `${activity.participantName} se hace cargo de ${activity.itemLabel}.`,
+          release: `${activity.participantName} liberó ${activity.itemLabel}.`,
+          ready: `${activity.participantName} ya tiene ${activity.itemLabel}.`,
+          pending: `${activity.participantName} volvió a dejar ${activity.itemLabel} pendiente.`,
+        };
+        setNotice(messages[activity.action]);
+        window.setTimeout(() => setNotice(""), 2800);
+      },
+    );
 
     return () => {
       socket.disconnect();
@@ -679,7 +816,11 @@ export default function Home() {
     const text = `¿Sale juntada? Marcá cuándo podés para “${eventName}”.`;
     try {
       if (navigator.share) {
-        await navigator.share({ title: eventName, text, url: window.location.href });
+        await navigator.share({
+          title: eventName,
+          text,
+          url: window.location.href,
+        });
         return;
       }
       await navigator.clipboard.writeText(`${text} ${window.location.href}`);
@@ -722,20 +863,24 @@ export default function Home() {
     setIsSubmitting(true);
     setApiError("");
     try {
-      const gathering = await gatheringService.create({
-        title,
-        organizerName,
-        organizerAvatarUrl: selectedAvatar,
-        locationHint: place || undefined,
-        locationLatitude: selectedLocation?.latitude,
-        locationLongitude: selectedLocation?.longitude,
-        windowStart: dateAtMinutes(from, startMinutes).toISOString(),
-        windowEnd: dateAtMinutes(to, endMinutes).toISOString(),
-        durationMinutes: createDuration,
-        dailyStartMinutes: startMinutes,
-        dailyEndMinutes: endMinutes,
-        slotStepMinutes: 60,
-      });
+      const gathering = await gatheringService.create(
+        {
+          templateGatheringId: templateGatheringId ?? undefined,
+          title,
+          organizerName,
+          organizerAvatarUrl: selectedAvatar,
+          locationHint: place || undefined,
+          locationLatitude: selectedLocation?.latitude,
+          locationLongitude: selectedLocation?.longitude,
+          windowStart: dateAtMinutes(from, startMinutes).toISOString(),
+          windowEnd: dateAtMinutes(to, endMinutes).toISOString(),
+          durationMinutes: createDuration,
+          dailyStartMinutes: startMinutes,
+          dailyEndMinutes: endMinutes,
+          slotStepMinutes: 60,
+        },
+        accessToken,
+      );
       setActiveGathering(gathering);
       setEventName(gathering.title);
       setLocation(gathering.locationHint ?? "Lugar a definir");
@@ -747,10 +892,15 @@ export default function Home() {
           participantId: organizer.id,
           responseToken: organizer.responseToken,
         };
-        storeParticipantSession(gathering.id, session.participantId, session.responseToken);
+        storeParticipantSession(
+          gathering.id,
+          session.participantId,
+          session.responseToken,
+        );
         setParticipantSession(session);
         setYourSlots([]);
       }
+      setTemplateGatheringId(null);
       setShowCreate(false);
       navigate(`/j/${gathering.slug}`);
       setNotice("Juntada creada. Ahora compartila con el grupo.");
@@ -785,7 +935,11 @@ export default function Home() {
         participantId: participant.id,
         responseToken: participant.responseToken,
       };
-      storeParticipantSession(activeGathering.id, session.participantId, session.responseToken);
+      storeParticipantSession(
+        activeGathering.id,
+        session.participantId,
+        session.responseToken,
+      );
       setParticipantSession(session);
       setActiveGathering({
         ...activeGathering,
@@ -933,9 +1087,10 @@ export default function Home() {
     expenseSettlement?.readyParticipants.some(
       (participant) => participant.participantId === currentParticipant?.id,
     ) ?? false;
-  const respondingParticipants = activeGathering?.participants.filter(
-    (participant) => (participant.availabilities?.length ?? 0) > 0,
-  ).length ?? 0;
+  const respondingParticipants =
+    activeGathering?.participants.filter(
+      (participant) => (participant.availabilities?.length ?? 0) > 0,
+    ).length ?? 0;
   const bestMatch = matches[0];
   const resultAnalysis = useMemo(() => {
     if (!activeGathering || !bestMatch) return null;
@@ -945,7 +1100,8 @@ export default function Home() {
     if (bestMatch.available === bestMatch.total) {
       return {
         title: "Hay un horario donde pueden todos",
-        detail: "No hace falta negociar cambios: ya tienen una coincidencia completa.",
+        detail:
+          "No hace falta negociar cambios: ya tienen una coincidencia completa.",
         action: "Pueden confirmarlo directamente.",
       };
     }
@@ -969,7 +1125,8 @@ export default function Home() {
     return {
       title: "Hay respuestas pendientes y horarios para negociar",
       detail: `${listNames(bestPendingNames)} todavía no respondió. Además, ${listNames(bestConflictNames)} marcó otros horarios.`,
-      action: "Conviene completar las respuestas pendientes y después negociar con quienes sigan afuera.",
+      action:
+        "Conviene completar las respuestas pendientes y después negociar con quienes sigan afuera.",
     };
   }, [activeGathering, bestMatch]);
   const heroData = useMemo(() => {
@@ -999,7 +1156,9 @@ export default function Home() {
           .format(startsAt)
           .replace(".", "")
           .toUpperCase(),
-        day: new Intl.DateTimeFormat("es-AR", { day: "numeric" }).format(startsAt),
+        day: new Intl.DateTimeFormat("es-AR", { day: "numeric" }).format(
+          startsAt,
+        ),
         title: "Esperando respuestas",
         detail: location,
         available: 0,
@@ -1037,7 +1196,9 @@ export default function Home() {
         .format(startsAt)
         .replace(".", "")
         .toUpperCase(),
-      day: new Intl.DateTimeFormat("es-AR", { day: "numeric" }).format(startsAt),
+      day: new Intl.DateTimeFormat("es-AR", { day: "numeric" }).format(
+        startsAt,
+      ),
       title: new Intl.DateTimeFormat("es-AR", {
         weekday: "long",
         day: "numeric",
@@ -1051,9 +1212,10 @@ export default function Home() {
       available: bestMatch.available,
       total: bestMatch.total,
       people,
-      pill: bestMatch.available === bestMatch.total
-        ? "Match perfecto"
-        : "Mejor opción",
+      pill:
+        bestMatch.available === bestMatch.total
+          ? "Match perfecto"
+          : "Mejor opción",
       note: "Calculamos esta opción con las disponibilidades cargadas por el grupo.",
     };
   }, [activeGathering, location, matches]);
@@ -1080,13 +1242,7 @@ export default function Home() {
       optionsPerDay,
       totalOptions: dayCount * optionsPerDay,
     };
-  }, [
-    createDuration,
-    createEndTime,
-    createFrom,
-    createStartTime,
-    createTo,
-  ]);
+  }, [createDuration, createEndTime, createFrom, createStartTime, createTo]);
 
   const findBestMoment = async () => {
     if (!activeGathering) {
@@ -1103,7 +1259,9 @@ export default function Home() {
       setShowResults(true);
     } catch (error) {
       setApiError(
-        error instanceof Error ? error.message : "No pudimos calcular los horarios.",
+        error instanceof Error
+          ? error.message
+          : "No pudimos calcular los horarios.",
       );
     }
   };
@@ -1112,7 +1270,9 @@ export default function Home() {
     <main className="app-root">
       <header className="topbar">
         <a className="brand" href="#inicio" aria-label="Sale Juntada, inicio">
-          <span className="brand-mark"><SparkIcon /></span>
+          <span className="brand-mark">
+            <SparkIcon />
+          </span>
           <span>Sale Juntada</span>
         </a>
         <div className="header-actions">
@@ -1129,18 +1289,36 @@ export default function Home() {
               {isLiveConnected ? "En vivo" : "Reconectando"}
             </m.span>
           ) : null}
-          <button className="icon-button" aria-label="Notificaciones">●</button>
-          <button className="avatar-button" aria-label="Tu perfil">
-            {activeGathering && participantSession
-              ? (() => {
-                  const participant = activeGathering.participants.find(
-                    (candidate) => candidate.id === participantSession.participantId,
-                  );
-                  return participant?.avatarUrl?.startsWith("emoji:")
-                    ? participant.avatarUrl.slice(6)
-                    : initials(participant?.name ?? "TF");
-                })()
-              : "TF"}
+          <button className="icon-button" aria-label="Notificaciones">
+            ●
+          </button>
+          <button
+            className={`avatar-button ${user ? "authenticated" : ""}`}
+            aria-label={
+              user ? `Cuenta de ${authName}` : "Ingresar o crear una cuenta"
+            }
+            type="button"
+            onClick={() => setShowAccount(true)}
+          >
+            {authAvatarUrl ? (
+              <img src={authAvatarUrl} alt="" />
+            ) : user ? (
+              initials(authName)
+            ) : activeGathering && participantSession ? (
+              (() => {
+                const participant = activeGathering.participants.find(
+                  (candidate) =>
+                    candidate.id === participantSession.participantId,
+                );
+                return participant?.avatarUrl?.startsWith("emoji:")
+                  ? participant.avatarUrl.slice(6)
+                  : initials(participant?.name ?? "TF");
+              })()
+            ) : isLoadingAuth ? (
+              "…"
+            ) : (
+              "↗"
+            )}
           </button>
         </div>
       </header>
@@ -1153,9 +1331,13 @@ export default function Home() {
         responseCount={activeGathering ? respondingParticipants : 6}
         match={heroData}
         confirmed={confirmed}
-        onCreate={() => setShowCreate(true)}
+        onCreate={startNewGathering}
         onShare={shareEvent}
-        onOpenAvailability={() => document.getElementById("disponibilidad")?.scrollIntoView({ behavior: "smooth" })}
+        onOpenAvailability={() =>
+          document
+            .getElementById("disponibilidad")
+            ?.scrollIntoView({ behavior: "smooth" })
+        }
         onOpenResults={findBestMoment}
       />
 
@@ -1166,17 +1348,25 @@ export default function Home() {
           animate={{ opacity: 1, y: 0 }}
           transition={standardTransition}
         >
-          <span className="eyebrow"><SparkIcon /> Coordinar sin vueltas</span>
-          <h1>Que coincidir sea<br /><em>la parte fácil.</em></h1>
+          <span className="eyebrow">
+            <SparkIcon /> Coordinar sin vueltas
+          </span>
+          <h1>
+            Que coincidir sea
+            <br />
+            <em>la parte fácil.</em>
+          </h1>
           <p>
-            Todos ponen cuándo pueden. Nosotros encontramos el momento
-            perfecto para que la juntada suceda.
+            Todos ponen cuándo pueden. Nosotros encontramos el momento perfecto
+            para que la juntada suceda.
           </p>
           <div className="hero-actions">
-            <button className="primary-button" onClick={() => setShowCreate(true)}>
+            <button className="primary-button" onClick={startNewGathering}>
               Crear una juntada <span aria-hidden="true">→</span>
             </button>
-            <a className="text-link" href="#disponibilidad">Ver cómo funciona</a>
+            <a className="text-link" href="#disponibilidad">
+              Ver cómo funciona
+            </a>
           </div>
         </m.div>
 
@@ -1189,7 +1379,9 @@ export default function Home() {
         >
           <div className="match-card-top">
             <span className="mini-label">Mejor coincidencia</span>
-            <span className="match-pill"><SparkIcon /> {heroData.pill}</span>
+            <span className="match-pill">
+              <SparkIcon /> {heroData.pill}
+            </span>
           </div>
           <div className="date-lockup">
             <div className="calendar-page">
@@ -1216,7 +1408,9 @@ export default function Home() {
                 </span>
               ))}
               {heroData.people.length > 4 && (
-                <span className="person-avatar more">+{heroData.people.length - 4}</span>
+                <span className="person-avatar more">
+                  +{heroData.people.length - 4}
+                </span>
               )}
             </div>
             <p>
@@ -1233,14 +1427,18 @@ export default function Home() {
             <m.span
               initial={false}
               animate={{
-                width: `${heroData.total > 0
-                  ? Math.round((heroData.available / heroData.total) * 100)
-                  : 0}%`,
+                width: `${
+                  heroData.total > 0
+                    ? Math.round((heroData.available / heroData.total) * 100)
+                    : 0
+                }%`,
               }}
               transition={standardTransition}
             />
           </div>
-          <div className="ai-note"><SparkIcon /> {heroData.note}</div>
+          <div className="ai-note">
+            <SparkIcon /> {heroData.note}
+          </div>
         </m.div>
       </section>
 
@@ -1257,38 +1455,48 @@ export default function Home() {
       )}
 
       <AnimatePresence>
-      {confirmed ? (
-        <m.section
-          className="confirmed-banner"
-          aria-live="polite"
-          initial={{ opacity: 0, y: -12, scale: 0.98 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: -8, scale: 0.99 }}
-          transition={springTransition}
-        >
-          <m.div
-            className="confirmed-icon"
-            initial={{ scale: 0, rotate: -16 }}
-            animate={{ scale: 1, rotate: 0 }}
-            transition={{ ...springTransition, delay: 0.08 }}
-          >✓</m.div>
-          <div>
-            <span>¡Sale juntada!</span>
-            <strong>{confirmed.day} {confirmed.date} a las {confirmed.time} · {location}</strong>
-          </div>
-          <button onClick={shareEvent}>Compartir confirmación</button>
-          <div className="confirmation-burst" aria-hidden="true">
-            {[-34, -22, -9, 10, 24, 36].map((x, index) => (
-              <m.i
-                key={x}
-                initial={{ opacity: 0, x: 0, y: 4, scale: 0 }}
-                animate={{ opacity: [0, 1, 0], x, y: -30 - (index % 3) * 8, scale: [0, 1, 0.7] }}
-                transition={{ duration: 0.72, delay: 0.08 + index * 0.035 }}
-              />
-            ))}
-          </div>
-        </m.section>
-      ) : null}
+        {confirmed ? (
+          <m.section
+            className="confirmed-banner"
+            aria-live="polite"
+            initial={{ opacity: 0, y: -12, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -8, scale: 0.99 }}
+            transition={springTransition}
+          >
+            <m.div
+              className="confirmed-icon"
+              initial={{ scale: 0, rotate: -16 }}
+              animate={{ scale: 1, rotate: 0 }}
+              transition={{ ...springTransition, delay: 0.08 }}
+            >
+              ✓
+            </m.div>
+            <div>
+              <span>¡Sale juntada!</span>
+              <strong>
+                {confirmed.day} {confirmed.date} a las {confirmed.time} ·{" "}
+                {location}
+              </strong>
+            </div>
+            <button onClick={shareEvent}>Compartir confirmación</button>
+            <div className="confirmation-burst" aria-hidden="true">
+              {[-34, -22, -9, 10, 24, 36].map((x, index) => (
+                <m.i
+                  key={x}
+                  initial={{ opacity: 0, x: 0, y: 4, scale: 0 }}
+                  animate={{
+                    opacity: [0, 1, 0],
+                    x,
+                    y: -30 - (index % 3) * 8,
+                    scale: [0, 1, 0.7],
+                  }}
+                  transition={{ duration: 0.72, delay: 0.08 + index * 0.035 }}
+                />
+              ))}
+            </div>
+          </m.section>
+        ) : null}
       </AnimatePresence>
 
       <section className="workspace" id="disponibilidad">
@@ -1305,7 +1513,8 @@ export default function Home() {
                   target="_blank"
                   rel="noreferrer"
                 >
-                  📍 {activeGathering.locationHint ?? "Ver ubicación"} · Ver mapa
+                  📍 {activeGathering.locationHint ?? "Ver ubicación"} · Ver
+                  mapa
                 </a>
               )}
           </div>
@@ -1335,9 +1544,16 @@ export default function Home() {
               </AnimatePresence>
             </div>
 
-            <div className="slot-grid" role="group" aria-label="Elegí tus horarios disponibles">
+            <div
+              className="slot-grid"
+              role="group"
+              aria-label="Elegí tus horarios disponibles"
+            >
               {slotGroups.map((group) => (
-                <section className="day-slot-group" key={`${group.day}-${group.date}`}>
+                <section
+                  className="day-slot-group"
+                  key={`${group.day}-${group.date}`}
+                >
                   <div className="day-slot-heading">
                     <span>{group.day}</span>
                     <strong>{group.date.split(" ")[0]}</strong>
@@ -1363,7 +1579,9 @@ export default function Home() {
                             initial={{ scale: 0.7, rotate: selected ? -24 : 0 }}
                             animate={{ scale: 1, rotate: 0 }}
                             transition={springTransition}
-                          >{selected ? "✓" : "+"}</m.i>
+                          >
+                            {selected ? "✓" : "+"}
+                          </m.i>
                         </m.button>
                       );
                     })}
@@ -1408,51 +1626,97 @@ export default function Home() {
                   : "6/6 respondieron"}
               </span>
             </div>
-            <m.div className="friend-list" variants={listVariants} initial="hidden" animate="visible">
+            <m.div
+              className="friend-list"
+              variants={listVariants}
+              initial="hidden"
+              animate="visible"
+            >
               <AnimatePresence initial={false}>
-              {!activeGathering && friends.map((friend) => (
-                <m.div className="friend-row" key={friend.name} layout variants={listItemVariants} exit="exit">
-                  <span className={`person-avatar ${friend.color}`}>{friend.initials}</span>
-                  <div><strong>{friend.name}</strong><small>{friend.available.length} horarios disponibles</small></div>
-                  <span className="check">✓</span>
-                </m.div>
-              ))}
-              {!activeGathering && <m.div className="friend-row" layout variants={listItemVariants}>
-                <span className="person-avatar coral">VO</span>
-                <div><strong>Vos</strong><small>{yourSlots.length} horarios disponibles</small></div>
-                <span className="check">✓</span>
-              </m.div>}
-              {activeGathering?.participants.map((participant, index) => {
-                const availableCount = participant.id === participantSession?.participantId
-                  ? yourSlots.length
-                  : participant.availabilities?.filter(
-                      (availability) => availability.kind === "AVAILABLE",
-                    ).length ?? 0;
-                const colors = ["peach", "blue", "purple", "green", "yellow", "coral"];
-                return (
-                  <m.div className="friend-row" key={participant.id} layout variants={listItemVariants} exit="exit">
-                    <ParticipantAvatar
-                      name={participant.name}
-                      avatarUrl={participant.avatarUrl}
-                      color={colors[index % colors.length]}
-                    />
+                {!activeGathering &&
+                  friends.map((friend) => (
+                    <m.div
+                      className="friend-row"
+                      key={friend.name}
+                      layout
+                      variants={listItemVariants}
+                      exit="exit"
+                    >
+                      <span className={`person-avatar ${friend.color}`}>
+                        {friend.initials}
+                      </span>
+                      <div>
+                        <strong>{friend.name}</strong>
+                        <small>
+                          {friend.available.length} horarios disponibles
+                        </small>
+                      </div>
+                      <span className="check">✓</span>
+                    </m.div>
+                  ))}
+                {!activeGathering && (
+                  <m.div
+                    className="friend-row"
+                    layout
+                    variants={listItemVariants}
+                  >
+                    <span className="person-avatar coral">VO</span>
                     <div>
-                      <strong>
-                        {participant.name}
-                        {participant.id === participantSession?.participantId ? " (vos)" : ""}
-                      </strong>
-                      <small>
-                        {availableCount > 0
-                          ? `${availableCount} horarios disponibles`
-                          : "Todavía no respondió"}
-                      </small>
+                      <strong>Vos</strong>
+                      <small>{yourSlots.length} horarios disponibles</small>
                     </div>
-                    <span className={availableCount > 0 ? "check" : "pending"}>
-                      {availableCount > 0 ? "✓" : "·"}
-                    </span>
+                    <span className="check">✓</span>
                   </m.div>
-                );
-              })}
+                )}
+                {activeGathering?.participants.map((participant, index) => {
+                  const availableCount =
+                    participant.id === participantSession?.participantId
+                      ? yourSlots.length
+                      : (participant.availabilities?.filter(
+                          (availability) => availability.kind === "AVAILABLE",
+                        ).length ?? 0);
+                  const colors = [
+                    "peach",
+                    "blue",
+                    "purple",
+                    "green",
+                    "yellow",
+                    "coral",
+                  ];
+                  return (
+                    <m.div
+                      className="friend-row"
+                      key={participant.id}
+                      layout
+                      variants={listItemVariants}
+                      exit="exit"
+                    >
+                      <ParticipantAvatar
+                        name={participant.name}
+                        avatarUrl={participant.avatarUrl}
+                        color={colors[index % colors.length]}
+                      />
+                      <div>
+                        <strong>
+                          {participant.name}
+                          {participant.id === participantSession?.participantId
+                            ? " (vos)"
+                            : ""}
+                        </strong>
+                        <small>
+                          {availableCount > 0
+                            ? `${availableCount} horarios disponibles`
+                            : "Todavía no respondió"}
+                        </small>
+                      </div>
+                      <span
+                        className={availableCount > 0 ? "check" : "pending"}
+                      >
+                        {availableCount > 0 ? "✓" : "·"}
+                      </span>
+                    </m.div>
+                  );
+                })}
               </AnimatePresence>
             </m.div>
           </aside>
@@ -1467,26 +1731,51 @@ export default function Home() {
         >
           <SparkIcon /> Encontrar el mejor momento
         </m.button>
-        <p className="find-caption">Analizamos todas las disponibilidades y te damos las mejores opciones.</p>
+        <p className="find-caption">
+          Analizamos todas las disponibilidades y te damos las mejores opciones.
+        </p>
 
         {confirmed && (
           <PurchasePlanner
+            key={activeGathering?.id ?? "demo"}
             gatheringKey={activeGathering?.id ?? "demo"}
             gatheringId={activeGathering?.id}
             participantId={participantSession?.participantId}
             participantToken={participantSession?.responseToken}
             canEdit={Boolean(currentParticipant?.isOrganizer)}
             remoteRevision={purchaseRevision}
+            isLiveConnected={isLiveConnected}
             participantCount={activeGathering?.participants.length ?? 6}
+            participants={activeGathering?.participants}
+            currentParticipant={currentParticipant}
+            onRequireParticipant={() => setShowJoin(true)}
+            onDietaryUpdated={(updatedParticipant) => {
+              setActiveGathering((current) =>
+                current
+                  ? {
+                      ...current,
+                      participants: current.participants.map((participant) =>
+                        participant.id === updatedParticipant.id
+                          ? { ...participant, ...updatedParticipant }
+                          : participant,
+                      ),
+                    }
+                  : current,
+              );
+            }}
             onNotice={showNotice}
           />
         )}
+
+        {activeGathering ? <PartyGames /> : null}
 
         {activeGathering && (
           <section className="expenses-section" id="gastos">
             <div className="expenses-heading">
               <div>
-                <span className="section-kicker">CUENTAS CLARAS</span>
+                <span className="section-kicker">
+                  LAS CUENTAS CLARAS MANTIENEN LA AMISTAD
+                </span>
                 <h2>Dividir gastos sin calculadora.</h2>
                 <p>
                   Cada uno carga lo que pagó. Dividimos el total entre las{" "}
@@ -1496,9 +1785,12 @@ export default function Home() {
               </div>
               <div className="expense-total">
                 <span>Total gastado</span>
-                <strong>{formatMoney(expenseSettlement?.totalCents ?? 0)}</strong>
+                <strong>
+                  {formatMoney(expenseSettlement?.totalCents ?? 0)}
+                </strong>
                 <small>
-                  {formatMoney(expenseSettlement?.averageCents ?? 0)} por persona
+                  {formatMoney(expenseSettlement?.averageCents ?? 0)} por
+                  persona
                 </small>
               </div>
             </div>
@@ -1513,19 +1805,31 @@ export default function Home() {
                     : "Conectando al grupo…"}
               </strong>
               {liveMembers.length > 0 && (
-                <span>{listNames(liveMembers.map((member) => member.name))}</span>
+                <span>
+                  {listNames(liveMembers.map((member) => member.name))}
+                </span>
               )}
               <AnimatePresence initial={false}>
-              {typingMembers.map((member) => (
-                <m.em key={`typing-${member.participantId}`} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}>
-                  {member.name} está cargando un gasto…
-                </m.em>
-              ))}
-              {analyzingMembers.map((member) => (
-                <m.em key={`analysis-${member.participantId}`} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}>
-                  {member.name} está analizando horarios…
-                </m.em>
-              ))}
+                {typingMembers.map((member) => (
+                  <m.em
+                    key={`typing-${member.participantId}`}
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -4 }}
+                  >
+                    {member.name} está cargando un gasto…
+                  </m.em>
+                ))}
+                {analyzingMembers.map((member) => (
+                  <m.em
+                    key={`analysis-${member.participantId}`}
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -4 }}
+                  >
+                    {member.name} está analizando horarios…
+                  </m.em>
+                ))}
               </AnimatePresence>
             </div>
 
@@ -1536,7 +1840,9 @@ export default function Home() {
                 <div className="closing-progress">
                   <span>
                     RONDA {expenseSettlement?.expenseRound ?? 1}
-                    {(expenseSettlement?.expenseRound ?? 1) > 1 ? " · AJUSTE" : ""}
+                    {(expenseSettlement?.expenseRound ?? 1) > 1
+                      ? " · AJUSTE"
+                      : ""}
                   </span>
                   <strong>
                     {expenseSettlement?.allReady
@@ -1617,31 +1923,33 @@ export default function Home() {
                 <div className="expense-history">
                   <strong>Gastos cargados</strong>
                   {(expenseSettlement?.expenses.length ?? 0) === 0 && (
-                    <p className="empty-expenses">Todavía no cargaron gastos.</p>
+                    <p className="empty-expenses">
+                      Todavía no cargaron gastos.
+                    </p>
                   )}
                   <AnimatePresence initial={false}>
-                  {expenseSettlement?.expenses.map((expense) => (
-                    <m.div
-                      className="expense-row"
-                      key={expense.id}
-                      layout
-                      initial={{ opacity: 0, x: -10 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      exit={{ opacity: 0, x: 10 }}
-                      transition={standardTransition}
-                    >
-                      <ParticipantAvatar
-                        name={expense.paidBy.name}
-                        avatarUrl={expense.paidBy.avatarUrl}
-                        color="peach"
-                      />
-                      <div>
-                        <strong>{expense.description}</strong>
-                        <small>Pagó {expense.paidBy.name}</small>
-                      </div>
-                      <b>{formatMoney(expense.amountCents)}</b>
-                    </m.div>
-                  ))}
+                    {expenseSettlement?.expenses.map((expense) => (
+                      <m.div
+                        className="expense-row"
+                        key={expense.id}
+                        layout
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: 10 }}
+                        transition={standardTransition}
+                      >
+                        <ParticipantAvatar
+                          name={expense.paidBy.name}
+                          avatarUrl={expense.paidBy.avatarUrl}
+                          color="peach"
+                        />
+                        <div>
+                          <strong>{expense.description}</strong>
+                          <small>Pagó {expense.paidBy.name}</small>
+                        </div>
+                        <b>{formatMoney(expense.amountCents)}</b>
+                      </m.div>
+                    ))}
                   </AnimatePresence>
                 </div>
               </div>
@@ -1649,7 +1957,9 @@ export default function Home() {
               <div className="settlement-card">
                 <div className="settlement-title">
                   <div>
-                    <span><SparkIcon /> DIVISIÓN AUTOMÁTICA</span>
+                    <span>
+                      <SparkIcon /> DIVISIÓN AUTOMÁTICA
+                    </span>
                     <h3>Quién transfiere a quién</h3>
                   </div>
                   <span className="transfer-count">
@@ -1663,7 +1973,10 @@ export default function Home() {
                   <div className="settlement-empty">
                     <span>↗</span>
                     <strong>Acá aparecerá la división</strong>
-                    <p>Con el primer gasto calculamos automáticamente quién paga y quién recibe.</p>
+                    <p>
+                      Con el primer gasto calculamos automáticamente quién paga
+                      y quién recibe.
+                    </p>
                   </div>
                 )}
                 {(expenseSettlement?.expenses.length ?? 0) > 0 &&
@@ -1681,65 +1994,79 @@ export default function Home() {
                       <span>🔒</span>
                       <div>
                         <strong>División preliminar</strong>
-                        <p>Las transferencias se habilitan cuando todos confirmen que terminaron de cargar.</p>
+                        <p>
+                          Las transferencias se habilitan cuando todos confirmen
+                          que terminaron de cargar.
+                        </p>
                       </div>
                     </div>
                   )}
                 <AnimatePresence initial={false}>
-                {expenseSettlement?.transfers.map((transfer) => (
-                  <m.div
-                    className={`transfer-row ${transfer.settled ? "settled" : ""}`}
-                    key={transfer.id}
-                    layout
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -8 }}
-                    transition={standardTransition}
-                  >
-                    <ParticipantAvatar
-                      name={transfer.fromName}
-                      avatarUrl={activeGathering.participants.find(
-                        (participant) => participant.id === transfer.fromParticipantId,
-                      )?.avatarUrl}
-                      color="coral"
-                    />
-                    <div>
-                      <strong>{transfer.fromName}</strong>
-                      <small>le transfiere a {transfer.toName}</small>
-                    </div>
-                    <b>{formatMoney(transfer.amountCents)}</b>
-                    <span className="transfer-arrow">→</span>
-                    <ParticipantAvatar
-                      name={transfer.toName}
-                      avatarUrl={activeGathering.participants.find(
-                        (participant) => participant.id === transfer.toParticipantId,
-                      )?.avatarUrl}
-                      color="green"
-                    />
-                    <div className="transfer-state">
-                      {expenseSettlement.allReady &&
-                      transfer.fromParticipantId === currentParticipant?.id ? (
-                        <button
-                          type="button"
-                          onClick={() => confirmTransferPayment(transfer)}
-                        >
-                          Marcar como transferido
-                        </button>
-                      ) : (
-                        <span className="pending-transfer">
-                          {expenseSettlement.allReady ? "Pendiente" : "A confirmar"}
-                        </span>
-                      )}
-                    </div>
-                  </m.div>
-                ))}
+                  {expenseSettlement?.transfers.map((transfer) => (
+                    <m.div
+                      className={`transfer-row ${transfer.settled ? "settled" : ""}`}
+                      key={transfer.id}
+                      layout
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -8 }}
+                      transition={standardTransition}
+                    >
+                      <ParticipantAvatar
+                        name={transfer.fromName}
+                        avatarUrl={
+                          activeGathering.participants.find(
+                            (participant) =>
+                              participant.id === transfer.fromParticipantId,
+                          )?.avatarUrl
+                        }
+                        color="coral"
+                      />
+                      <div>
+                        <strong>{transfer.fromName}</strong>
+                        <small>le transfiere a {transfer.toName}</small>
+                      </div>
+                      <b>{formatMoney(transfer.amountCents)}</b>
+                      <span className="transfer-arrow">→</span>
+                      <ParticipantAvatar
+                        name={transfer.toName}
+                        avatarUrl={
+                          activeGathering.participants.find(
+                            (participant) =>
+                              participant.id === transfer.toParticipantId,
+                          )?.avatarUrl
+                        }
+                        color="green"
+                      />
+                      <div className="transfer-state">
+                        {expenseSettlement.allReady &&
+                        transfer.fromParticipantId ===
+                          currentParticipant?.id ? (
+                          <button
+                            type="button"
+                            onClick={() => confirmTransferPayment(transfer)}
+                          >
+                            Marcar como transferido
+                          </button>
+                        ) : (
+                          <span className="pending-transfer">
+                            {expenseSettlement.allReady
+                              ? "Pendiente"
+                              : "A confirmar"}
+                          </span>
+                        )}
+                      </div>
+                    </m.div>
+                  ))}
                 </AnimatePresence>
                 {(expenseSettlement?.completedTransfers.length ?? 0) > 0 && (
                   <div className="completed-transfers">
                     <strong>Transferencias ya realizadas</strong>
                     {expenseSettlement?.completedTransfers.map((transfer) => (
                       <div key={transfer.id}>
-                        <span>✓ {transfer.fromName} → {transfer.toName}</span>
+                        <span>
+                          ✓ {transfer.fromName} → {transfer.toName}
+                        </span>
                         <b>{formatMoney(transfer.amountCents)}</b>
                       </div>
                     ))}
@@ -1747,7 +2074,8 @@ export default function Home() {
                 )}
                 {(expenseSettlement?.balances.length ?? 0) > 0 && (
                   <div className="balance-note">
-                    El reparto contempla centavos para que el total cierre exactamente.
+                    El reparto contempla centavos para que el total cierre
+                    exactamente.
                   </div>
                 )}
               </div>
@@ -1766,9 +2094,24 @@ export default function Home() {
         <span className="section-kicker">ASÍ DE SIMPLE</span>
         <h2>Del “vemos” al “nos vemos”.</h2>
         <div className="steps-grid">
-          <article><span>01</span><div className="step-icon">＋</div><h3>Creá la juntada</h3><p>Elegí un rango de fechas y compartí el link en el grupo.</p></article>
-          <article><span>02</span><div className="step-icon">✓</div><h3>Cada uno responde</h3><p>Sin registros ni descargas. En menos de un minuto.</p></article>
-          <article><span>03</span><div className="step-icon">✦</div><h3>Encontramos el match</h3><p>Ordenamos las mejores opciones y ustedes confirman.</p></article>
+          <article>
+            <span>01</span>
+            <div className="step-icon">＋</div>
+            <h3>Creá la juntada</h3>
+            <p>Elegí un rango de fechas y compartí el link en el grupo.</p>
+          </article>
+          <article>
+            <span>02</span>
+            <div className="step-icon">✓</div>
+            <h3>Cada uno responde</h3>
+            <p>Sin registros ni descargas. En menos de un minuto.</p>
+          </article>
+          <article>
+            <span>03</span>
+            <div className="step-icon">✦</div>
+            <h3>Encontramos el match</h3>
+            <p>Ordenamos las mejores opciones y ustedes confirman.</p>
+          </article>
         </div>
       </m.section>
 
@@ -1780,22 +2123,34 @@ export default function Home() {
           viewport={{ once: true, amount: 0.2 }}
           transition={standardTransition}
         >
-          <div className="support-emoji" aria-hidden="true">🍺</div>
+          <div className="support-emoji" aria-hidden="true">
+            🍺
+          </div>
           <div>
             <span>VOLUNTAD TOTALMENTE OPCIONAL</span>
             <h2>¿Te ahorramos 84 mensajes?</h2>
-            <p>Si Sale Juntada te salvó el plan, podés invitarme una birrita de onda.</p>
+            <p>
+              Si Sale Juntada te salvó el plan, podés invitarme una birrita de
+              onda.
+            </p>
           </div>
           <div className="support-alias">
             <small>Alias</small>
             <strong>{supportAlias}</strong>
-            <button type="button" onClick={copySupportAlias}>Copiar alias</button>
+            <button type="button" onClick={copySupportAlias}>
+              Copiar alias
+            </button>
           </div>
         </m.aside>
       )}
 
       <footer id="more">
-        <a className="brand" href="#inicio"><span className="brand-mark"><SparkIcon /></span><span>Sale Juntada</span></a>
+        <a className="brand" href="#inicio">
+          <span className="brand-mark">
+            <SparkIcon />
+          </span>
+          <span>Sale Juntada</span>
+        </a>
         <p>Hecho para que los planes salgan.</p>
         <span>Argentina · 2026</span>
       </footer>
@@ -1804,16 +2159,28 @@ export default function Home() {
         activeSection={activeSection}
         purchaseEnabled={Boolean(confirmed)}
         onHome={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-        onAvailability={() => document.getElementById("disponibilidad")?.scrollIntoView({ behavior: "smooth" })}
+        onAvailability={() =>
+          document
+            .getElementById("disponibilidad")
+            ?.scrollIntoView({ behavior: "smooth" })
+        }
         onPurchase={() => {
           if (confirmed) {
-            document.getElementById("compra")?.scrollIntoView({ behavior: "smooth" });
+            document
+              .getElementById("compra")
+              ?.scrollIntoView({ behavior: "smooth" });
             return;
           }
-          setNotice("La compra se habilita cuando el organizador confirma una fecha.");
+          setNotice(
+            "La compra se habilita cuando el organizador confirma una fecha.",
+          );
           window.setTimeout(() => setNotice(""), 2800);
         }}
-        onMore={() => document.querySelector(".support-card, footer")?.scrollIntoView({ behavior: "smooth" })}
+        onMore={() =>
+          document
+            .querySelector("#juegos, .support-card, footer")
+            ?.scrollIntoView({ behavior: "smooth" })
+        }
       />
 
       <AnimatedDialog
@@ -1822,117 +2189,165 @@ export default function Home() {
         panelClassName="results-sheet"
         label="Resultados de la juntada"
       >
-            <button className="close-button" onClick={() => setShowResults(false)} aria-label="Cerrar">×</button>
-            <span className="eyebrow"><SparkIcon /> Análisis listo</span>
-            <h2 id="results-title">¿Qué falta para que salga?</h2>
-            <p>Te mostramos la mejor opción, el bloqueo y el cambio más corto para resolverlo.</p>
-            {activeGathering && resultAnalysis && (
-              <section className="result-analysis" aria-label="Diagnóstico del grupo">
-                <div className="analysis-icon"><SparkIcon /></div>
-                <div className="analysis-copy">
-                  <span>DIAGNÓSTICO</span>
-                  <h3>{resultAnalysis.title}</h3>
-                  <p>{resultAnalysis.detail}</p>
+        <button
+          className="close-button"
+          onClick={() => setShowResults(false)}
+          aria-label="Cerrar"
+        >
+          ×
+        </button>
+        <span className="eyebrow">
+          <SparkIcon /> Análisis listo
+        </span>
+        <h2 id="results-title">¿Qué falta para que salga?</h2>
+        <p>
+          Te mostramos la mejor opción, el bloqueo y el cambio más corto para
+          resolverlo.
+        </p>
+        {activeGathering && resultAnalysis && (
+          <section
+            className="result-analysis"
+            aria-label="Diagnóstico del grupo"
+          >
+            <div className="analysis-icon">
+              <SparkIcon />
+            </div>
+            <div className="analysis-copy">
+              <span>DIAGNÓSTICO</span>
+              <h3>{resultAnalysis.title}</h3>
+              <p>{resultAnalysis.detail}</p>
+            </div>
+            <div className="analysis-action">
+              <strong>Qué haría ahora</strong>
+              <p>{resultAnalysis.action}</p>
+            </div>
+          </section>
+        )}
+        {activeGathering && matches.length > 0 && (
+          <div className="alternatives-heading">
+            <strong>Horarios para proponer</strong>
+            <span>De menor a mayor esfuerzo</span>
+          </div>
+        )}
+        <m.div
+          className="proposal-list"
+          variants={listVariants}
+          initial="hidden"
+          animate="visible"
+        >
+          {activeGathering && matches.length === 0 && (
+            <div className="empty-results">
+              Todavía no hay disponibilidades cargadas. Compartí el link para
+              que el grupo responda.
+            </div>
+          )}
+          {!activeGathering &&
+            rankedSlots.slice(0, 3).map((slot, index) => (
+              <m.article
+                className={`proposal ${index === 0 ? "best" : ""}`}
+                key={slot.id}
+                variants={listItemVariants}
+              >
+                <div className="proposal-rank">{index + 1}</div>
+                <div className="proposal-date">
+                  <strong>
+                    {slot.day} {slot.date}
+                  </strong>
+                  <span>
+                    {slot.time} · {location}
+                  </span>
                 </div>
-                <div className="analysis-action">
-                  <strong>Qué haría ahora</strong>
-                  <p>{resultAnalysis.action}</p>
+                <div className="proposal-score">
+                  <strong>{slot.available}/6</strong>
+                  <span>
+                    {slot.missing === 0
+                      ? "Pueden todos"
+                      : `Falta ${slot.missing}`}
+                  </span>
                 </div>
-              </section>
-            )}
-            {activeGathering && matches.length > 0 && (
-              <div className="alternatives-heading">
-                <strong>Horarios para proponer</strong>
-                <span>De menor a mayor esfuerzo</span>
-              </div>
-            )}
-            <m.div className="proposal-list" variants={listVariants} initial="hidden" animate="visible">
-              {activeGathering && matches.length === 0 && (
-                <div className="empty-results">
-                  Todavía no hay disponibilidades cargadas. Compartí el link para
-                  que el grupo responda.
-                </div>
-              )}
-              {!activeGathering && rankedSlots.slice(0, 3).map((slot, index) => (
-                <m.article className={`proposal ${index === 0 ? "best" : ""}`} key={slot.id} variants={listItemVariants}>
+                <button onClick={() => confirmProposal(slot.id)}>Elegir</button>
+              </m.article>
+            ))}
+          {activeGathering &&
+            matches.map((match, index) => {
+              const startsAt = new Date(match.startsAt);
+              const pendingNames = match.pendingParticipantNames ?? [];
+              const conflictNames = match.conflictParticipantNames ?? [];
+              const availableNames = match.availableParticipantNames ?? [];
+              const dateLabel = new Intl.DateTimeFormat("es-AR", {
+                weekday: "short",
+                day: "numeric",
+                month: "short",
+              }).format(startsAt);
+              const timeLabel = new Intl.DateTimeFormat("es-AR", {
+                hour: "2-digit",
+                minute: "2-digit",
+                hour12: false,
+              }).format(startsAt);
+
+              return (
+                <m.article
+                  className={`proposal ${index === 0 ? "best" : ""}`}
+                  key={match.startsAt}
+                  variants={listItemVariants}
+                  layout
+                >
                   <div className="proposal-rank">{index + 1}</div>
                   <div className="proposal-date">
-                    <strong>{slot.day} {slot.date}</strong>
-                    <span>{slot.time} · {location}</span>
+                    <strong>{dateLabel}</strong>
+                    <span>
+                      {timeLabel} · {location}
+                    </span>
                   </div>
                   <div className="proposal-score">
-                    <strong>{slot.available}/6</strong>
-                    <span>{slot.missing === 0 ? "Pueden todos" : `Falta ${slot.missing}`}</span>
+                    <strong>
+                      {match.available}/{match.total}
+                    </strong>
+                    <span>
+                      {index === 0 ? "Mejor opción" : match.explanation}
+                    </span>
                   </div>
-                  <button onClick={() => confirmProposal(slot.id)}>Elegir</button>
-                </m.article>
-              ))}
-              {activeGathering && matches.map((match, index) => {
-                const startsAt = new Date(match.startsAt);
-                const pendingNames = match.pendingParticipantNames ?? [];
-                const conflictNames = match.conflictParticipantNames ?? [];
-                const availableNames = match.availableParticipantNames ?? [];
-                const dateLabel = new Intl.DateTimeFormat("es-AR", {
-                  weekday: "short",
-                  day: "numeric",
-                  month: "short",
-                }).format(startsAt);
-                const timeLabel = new Intl.DateTimeFormat("es-AR", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                  hour12: false,
-                }).format(startsAt);
-
-                return (
-                  <m.article
-                    className={`proposal ${index === 0 ? "best" : ""}`}
-                    key={match.startsAt}
-                    variants={listItemVariants}
-                    layout
-                  >
-                    <div className="proposal-rank">{index + 1}</div>
-                    <div className="proposal-date">
-                      <strong>{dateLabel}</strong>
-                      <span>{timeLabel} · {location}</span>
-                    </div>
-                    <div className="proposal-score">
-                      <strong>{match.available}/{match.total}</strong>
-                      <span>{index === 0 ? "Mejor opción" : match.explanation}</span>
-                    </div>
-                    <div className="proposal-breakdown">
-                      <span className="can-attend">
-                        ✓ Pueden: {availableNames.length > 0
-                          ? listNames(availableNames)
-                          : "todavía nadie"}
+                  <div className="proposal-breakdown">
+                    <span className="can-attend">
+                      ✓ Pueden:{" "}
+                      {availableNames.length > 0
+                        ? listNames(availableNames)
+                        : "todavía nadie"}
+                    </span>
+                    {match.missing === 0 && (
+                      <span className="all-attend">
+                        Listo: no hay que mover a nadie.
                       </span>
-                      {match.missing === 0 && (
-                        <span className="all-attend">Listo: no hay que mover a nadie.</span>
-                      )}
-                      {pendingNames.length > 0 && (
-                        <span className="waiting-on">
-                          Esperando respuesta de {listNames(pendingNames)}.
-                        </span>
-                      )}
-                      {conflictNames.length > 0 && (
-                        <span className="needs-change">
-                          Para llegar a {match.total}/{match.total}, {listNames(conflictNames)}
-                          {conflictNames.length === 1 ? " tendría" : " tendrían"} que mover su disponibilidad.
-                        </span>
-                      )}
-                    </div>
-                    {currentParticipant?.isOrganizer && (
-                      <button
-                        type="button"
-                        className="proposal-confirm"
-                        onClick={() => confirmProposal(match.startsAt)}
-                      >
-                        Confirmar esta fecha
-                      </button>
                     )}
-                  </m.article>
-                );
-              })}
-            </m.div>
+                    {pendingNames.length > 0 && (
+                      <span className="waiting-on">
+                        Esperando respuesta de {listNames(pendingNames)}.
+                      </span>
+                    )}
+                    {conflictNames.length > 0 && (
+                      <span className="needs-change">
+                        Para llegar a {match.total}/{match.total},{" "}
+                        {listNames(conflictNames)}
+                        {conflictNames.length === 1
+                          ? " tendría"
+                          : " tendrían"}{" "}
+                        que mover su disponibilidad.
+                      </span>
+                    )}
+                  </div>
+                  {currentParticipant?.isOrganizer && (
+                    <button
+                      type="button"
+                      className="proposal-confirm"
+                      onClick={() => confirmProposal(match.startsAt)}
+                    >
+                      Confirmar esta fecha
+                    </button>
+                  )}
+                </m.article>
+              );
+            })}
+        </m.div>
       </AnimatedDialog>
 
       <AnimatedDialog
@@ -1943,225 +2358,267 @@ export default function Home() {
         as="form"
         onSubmit={createEvent}
       >
-            <button type="button" className="close-button" onClick={() => setShowCreate(false)} aria-label="Cerrar">×</button>
-            <span className="eyebrow"><SparkIcon /> Nueva juntada</span>
-            <h2 id="create-title">¿Qué plan tienen?</h2>
-            <p>Con lo básico alcanza. Después el grupo completa el resto.</p>
-            <label>
-              Nombre de la juntada
-              <input name="title" defaultValue={eventName} placeholder="Ej. Asado, birras, fulbito..." required />
-            </label>
-            <label>
-              Tu nombre
+        <button
+          type="button"
+          className="close-button"
+          onClick={() => setShowCreate(false)}
+          aria-label="Cerrar"
+        >
+          ×
+        </button>
+        <span className="eyebrow">
+          <SparkIcon />{" "}
+          {templateGatheringId ? "Duplicar juntada" : "Nueva juntada"}
+        </span>
+        <h2 id="create-title">¿Qué plan tienen?</h2>
+        <p>
+          {templateGatheringId
+            ? "Copiamos el lugar, la configuración y las cantidades. Los invitados, responsables y gastos empiezan de cero."
+            : "Con lo básico alcanza. Después el grupo completa el resto."}
+        </p>
+        <label>
+          Nombre de la juntada
+          <input
+            name="title"
+            value={createTitle}
+            onChange={(event) => setCreateTitle(event.target.value)}
+            placeholder="Ej. Asado, birras, fulbito..."
+            required
+          />
+        </label>
+        <label>
+          Tu nombre
+          <input
+            name="organizerName"
+            value={createOrganizerName}
+            onChange={(event) => setCreateOrganizerName(event.target.value)}
+            placeholder="Ej. Tomás"
+            minLength={2}
+            required
+          />
+        </label>
+        <fieldset className="avatar-picker">
+          <legend>Elegí tu personaje</legend>
+          <div className="avatar-options">
+            {avatarPresets.map((emoji) => {
+              const value = `emoji:${emoji}`;
+              return (
+                <button
+                  type="button"
+                  className={selectedAvatar === value ? "selected" : ""}
+                  aria-label={`Usar ${emoji} como avatar`}
+                  aria-pressed={selectedAvatar === value}
+                  onClick={() => setSelectedAvatar(value)}
+                  key={emoji}
+                >
+                  {emoji}
+                </button>
+              );
+            })}
+            <label className="photo-avatar-option">
+              {selectedAvatar.startsWith("data:") ? (
+                <img src={selectedAvatar} alt="Tu foto elegida" />
+              ) : (
+                <span>📷</span>
+              )}
+              <small>{isPreparingAvatar ? "Preparando…" : "Tu foto"}</small>
               <input
-                name="organizerName"
-                defaultValue=""
-                placeholder="Ej. Tomás"
-                minLength={2}
+                type="file"
+                accept="image/*"
+                disabled={isPreparingAvatar}
+                onChange={async (event) => {
+                  const file = event.target.files?.[0];
+                  if (!file) return;
+                  setIsPreparingAvatar(true);
+                  setApiError("");
+                  try {
+                    setSelectedAvatar(await makeAvatarThumbnail(file));
+                  } catch (error) {
+                    setApiError(
+                      error instanceof Error
+                        ? error.message
+                        : "No pudimos preparar esa foto.",
+                    );
+                  } finally {
+                    setIsPreparingAvatar(false);
+                  }
+                }}
+              />
+            </label>
+          </div>
+          <small>La foto se recorta y comprime antes de guardarse.</small>
+        </fieldset>
+        <section className="schedule-builder location-builder">
+          <div className="schedule-heading">
+            <div>
+              <strong>¿Dónde sería?</strong>
+              <small>Buscá el lugar y ajustá el pin si hace falta.</small>
+            </div>
+            <span>📍</span>
+          </div>
+          <Suspense
+            fallback={
+              <div className="map-loading" role="status">
+                Preparando el mapa…
+              </div>
+            }
+          >
+            <LocationPicker
+              value={selectedLocation}
+              onChange={setSelectedLocation}
+            />
+          </Suspense>
+        </section>
+        <section className="schedule-builder">
+          <div className="schedule-heading">
+            <div>
+              <strong>¿Qué días buscamos?</strong>
+              <small>Elegí el período que querés consultar.</small>
+            </div>
+            <span>1</span>
+          </div>
+          <div className="form-row">
+            <label>
+              Desde
+              <input
+                name="from"
+                type="date"
+                min={dateInputValue(new Date())}
+                value={createFrom}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setCreateFrom(value);
+                  if (createTo < value) setCreateTo(value);
+                }}
                 required
               />
             </label>
-            <fieldset className="avatar-picker">
-              <legend>Elegí tu personaje</legend>
-              <div className="avatar-options">
-                {avatarPresets.map((emoji) => {
-                  const value = `emoji:${emoji}`;
-                  return (
-                    <button
-                      type="button"
-                      className={selectedAvatar === value ? "selected" : ""}
-                      aria-label={`Usar ${emoji} como avatar`}
-                      aria-pressed={selectedAvatar === value}
-                      onClick={() => setSelectedAvatar(value)}
-                      key={emoji}
-                    >
-                      {emoji}
-                    </button>
-                  );
-                })}
-                <label className="photo-avatar-option">
-                  {selectedAvatar.startsWith("data:")
-                    ? <img src={selectedAvatar} alt="Tu foto elegida" />
-                    : <span>📷</span>}
-                  <small>{isPreparingAvatar ? "Preparando…" : "Tu foto"}</small>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    disabled={isPreparingAvatar}
-                    onChange={async (event) => {
-                      const file = event.target.files?.[0];
-                      if (!file) return;
-                      setIsPreparingAvatar(true);
-                      setApiError("");
-                      try {
-                        setSelectedAvatar(await makeAvatarThumbnail(file));
-                      } catch (error) {
-                        setApiError(
-                          error instanceof Error
-                            ? error.message
-                            : "No pudimos preparar esa foto.",
-                        );
-                      } finally {
-                        setIsPreparingAvatar(false);
-                      }
-                    }}
-                  />
-                </label>
-              </div>
-              <small>La foto se recorta y comprime antes de guardarse.</small>
-            </fieldset>
-            <section className="schedule-builder location-builder">
-              <div className="schedule-heading">
-                <div>
-                  <strong>¿Dónde sería?</strong>
-                  <small>Buscá el lugar y ajustá el pin si hace falta.</small>
-                </div>
-                <span>📍</span>
-              </div>
-              <Suspense fallback={<div className="map-loading" role="status">Preparando el mapa…</div>}>
-                <LocationPicker
-                  value={selectedLocation}
-                  onChange={setSelectedLocation}
-                />
-              </Suspense>
-            </section>
-            <section className="schedule-builder">
-              <div className="schedule-heading">
-                <div>
-                  <strong>¿Qué días buscamos?</strong>
-                  <small>Elegí el período que querés consultar.</small>
-                </div>
-                <span>1</span>
-              </div>
-              <div className="form-row">
-                <label>
-                  Desde
-                  <input
-                    name="from"
-                    type="date"
-                    min={dateInputValue(new Date())}
-                    value={createFrom}
-                    onChange={(event) => {
-                      const value = event.target.value;
-                      setCreateFrom(value);
-                      if (createTo < value) setCreateTo(value);
-                    }}
-                    required
-                  />
-                </label>
-                <label>
-                  Hasta
-                  <input
-                    name="to"
-                    type="date"
-                    min={createFrom}
-                    value={createTo}
-                    onChange={(event) => setCreateTo(event.target.value)}
-                    required
-                  />
-                </label>
-              </div>
-            </section>
-            <section className="schedule-builder">
-              <div className="schedule-heading">
-                <div>
-                  <strong>¿En qué horario?</strong>
-                  <small>No mostraremos opciones fuera de esta franja.</small>
-                </div>
-                <span>2</span>
-              </div>
-              <div className="time-presets" aria-label="Franjas sugeridas">
-                {timeWindowPresets.map((preset) => {
-                  const selected =
-                    createStartTime === preset.start &&
-                    createEndTime === preset.end;
-                  return (
-                    <button
-                      type="button"
-                      className={selected ? "selected" : ""}
-                      aria-pressed={selected}
-                      onClick={() => {
-                        setCreateStartTime(preset.start);
-                        setCreateEndTime(preset.end);
-                      }}
-                      key={preset.label}
-                    >
-                      <span>{preset.icon}</span>
-                      {preset.label}
-                    </button>
-                  );
-                })}
-              </div>
-              <div className="form-row time-range-row">
-                <label>
-                  Desde las
-                  <input
-                    type="time"
-                    value={createStartTime}
-                    onChange={(event) => setCreateStartTime(event.target.value)}
-                    required
-                  />
-                </label>
-                <label>
-                  Hasta las
-                  <input
-                    type="time"
-                    value={createEndTime}
-                    onChange={(event) => setCreateEndTime(event.target.value)}
-                    required
-                  />
-                </label>
-              </div>
-              {createSchedulePreview.overnight && (
-                <small className="overnight-note">
-                  🌙 Termina al día siguiente.
-                </small>
-              )}
-              <label>
-                ¿Cuánto debería durar?
-                <select
-                  value={createDuration}
-                  onChange={(event) => setCreateDuration(Number(event.target.value))}
-                >
-                  <option value={60}>1 hora</option>
-                  <option value={120}>2 horas</option>
-                  <option value={180}>3 horas</option>
-                  <option value={240}>4 horas</option>
-                  <option value={300}>5 horas</option>
-                </select>
-              </label>
-            </section>
-            <div
-              className={`schedule-preview ${
-                createSchedulePreview.totalOptions === 0 ? "invalid" : ""
-              }`}
-            >
-              <span aria-hidden="true">✨</span>
-              <div>
-                <strong>
-                  {createSchedulePreview.totalOptions > 0
-                    ? `${createSchedulePreview.totalOptions} horarios posibles`
-                    : "La franja es demasiado corta"}
-                </strong>
-                <small>
-                  {createSchedulePreview.dayCount} días · opciones cada 1 hora ·
-                  duración de {createDuration / 60} h
-                </small>
-              </div>
+            <label>
+              Hasta
+              <input
+                name="to"
+                type="date"
+                min={createFrom}
+                value={createTo}
+                onChange={(event) => setCreateTo(event.target.value)}
+                required
+              />
+            </label>
+          </div>
+        </section>
+        <section className="schedule-builder">
+          <div className="schedule-heading">
+            <div>
+              <strong>¿En qué horario?</strong>
+              <small>No mostraremos opciones fuera de esta franja.</small>
             </div>
-            {apiError && <small className="form-error" role="alert">{apiError}</small>}
-            <button
-              className="primary-button full"
-              type="submit"
-              disabled={
-                isSubmitting ||
-                isPreparingAvatar ||
-                createSchedulePreview.totalOptions === 0
+            <span>2</span>
+          </div>
+          <div className="time-presets" aria-label="Franjas sugeridas">
+            {timeWindowPresets.map((preset) => {
+              const selected =
+                createStartTime === preset.start &&
+                createEndTime === preset.end;
+              return (
+                <button
+                  type="button"
+                  className={selected ? "selected" : ""}
+                  aria-pressed={selected}
+                  onClick={() => {
+                    setCreateStartTime(preset.start);
+                    setCreateEndTime(preset.end);
+                  }}
+                  key={preset.label}
+                >
+                  <span>{preset.icon}</span>
+                  {preset.label}
+                </button>
+              );
+            })}
+          </div>
+          <div className="form-row time-range-row">
+            <label>
+              Desde las
+              <input
+                type="time"
+                value={createStartTime}
+                onChange={(event) => setCreateStartTime(event.target.value)}
+                required
+              />
+            </label>
+            <label>
+              Hasta las
+              <input
+                type="time"
+                value={createEndTime}
+                onChange={(event) => setCreateEndTime(event.target.value)}
+                required
+              />
+            </label>
+          </div>
+          {createSchedulePreview.overnight && (
+            <small className="overnight-note">
+              🌙 Termina al día siguiente.
+            </small>
+          )}
+          <label>
+            ¿Cuánto debería durar?
+            <select
+              value={createDuration}
+              onChange={(event) =>
+                setCreateDuration(Number(event.target.value))
               }
             >
-              {isSubmitting ? "Creando…" : "Crear y elegir horarios"} <span>→</span>
-            </button>
-            <small className="privacy-note">Nadie necesita registrarse para responder.</small>
+              <option value={60}>1 hora</option>
+              <option value={120}>2 horas</option>
+              <option value={180}>3 horas</option>
+              <option value={240}>4 horas</option>
+              <option value={300}>5 horas</option>
+            </select>
+          </label>
+        </section>
+        <div
+          className={`schedule-preview ${
+            createSchedulePreview.totalOptions === 0 ? "invalid" : ""
+          }`}
+        >
+          <span aria-hidden="true">✨</span>
+          <div>
+            <strong>
+              {createSchedulePreview.totalOptions > 0
+                ? `${createSchedulePreview.totalOptions} horarios posibles`
+                : "La franja es demasiado corta"}
+            </strong>
+            <small>
+              {createSchedulePreview.dayCount} días · opciones cada 1 hora ·
+              duración de {createDuration / 60} h
+            </small>
+          </div>
+        </div>
+        {apiError && (
+          <small className="form-error" role="alert">
+            {apiError}
+          </small>
+        )}
+        <button
+          className="primary-button full"
+          type="submit"
+          disabled={
+            isSubmitting ||
+            isPreparingAvatar ||
+            createSchedulePreview.totalOptions === 0
+          }
+        >
+          {isSubmitting
+            ? "Creando…"
+            : templateGatheringId
+              ? "Crear copia y revisar"
+              : "Crear y elegir horarios"}{" "}
+          <span>→</span>
+        </button>
+        <small className="privacy-note">
+          Nadie necesita registrarse para responder.
+        </small>
       </AnimatedDialog>
 
       <AnimatedDialog
@@ -2182,7 +2639,9 @@ export default function Home() {
             >
               ×
             </button>
-            <span className="eyebrow"><SparkIcon /> Te invitaron</span>
+            <span className="eyebrow">
+              <SparkIcon /> Te invitaron
+            </span>
             <h2 id="join-title">Sumate a “{activeGathering.title}”</h2>
             <p>
               Decinos cómo te llamás para guardar tu disponibilidad. No hace
@@ -2217,9 +2676,11 @@ export default function Home() {
                   );
                 })}
                 <label className="photo-avatar-option">
-                  {selectedAvatar.startsWith("data:")
-                    ? <img src={selectedAvatar} alt="Tu foto elegida" />
-                    : <span>📷</span>}
+                  {selectedAvatar.startsWith("data:") ? (
+                    <img src={selectedAvatar} alt="Tu foto elegida" />
+                  ) : (
+                    <span>📷</span>
+                  )}
                   <small>{isPreparingAvatar ? "Preparando…" : "Tu foto"}</small>
                   <input
                     type="file"
@@ -2247,27 +2708,45 @@ export default function Home() {
               </div>
               <small>La foto se recorta y comprime antes de guardarse.</small>
             </fieldset>
-            {apiError && <small className="form-error" role="alert">{apiError}</small>}
+            {apiError && (
+              <small className="form-error" role="alert">
+                {apiError}
+              </small>
+            )}
             <button
               className="primary-button full"
               type="submit"
               disabled={isSubmitting || isPreparingAvatar}
             >
-              {isSubmitting ? "Sumándote…" : "Entrar y marcar horarios"} <span>→</span>
+              {isSubmitting ? "Sumándote…" : "Entrar y marcar horarios"}{" "}
+              <span>→</span>
             </button>
-            {googleClientId && (
-              <>
-                <div className="join-divider"><span>o recuperá tu perfil</span></div>
-                <div className="google-signin" ref={googleButtonRef} />
-              </>
-            )}
+            <div className="join-divider">
+              <span>o guardá tu acceso</span>
+            </div>
+            <button
+              className="account-join-button"
+              type="button"
+              onClick={() => setShowAccount(true)}
+            >
+              {user
+                ? `Sesión activa como ${authName}`
+                : "Ingresar con Google o email"}
+            </button>
             <small className="privacy-note">
-              Sin cuenta queda en este dispositivo. Con Google también podés
-              recuperarla desde otro.
+              Podés seguir como invitado. La cuenta permite recuperar tus
+              juntadas desde otro dispositivo.
             </small>
           </>
         ) : null}
       </AnimatedDialog>
+
+      <AccountDialog
+        open={showAccount}
+        onClose={() => setShowAccount(false)}
+        onOpenGathering={openGatheringFromHistory}
+        onDuplicateGathering={(item) => void duplicateGathering(item)}
+      />
 
       <AnimatedToast message={notice} />
     </main>
