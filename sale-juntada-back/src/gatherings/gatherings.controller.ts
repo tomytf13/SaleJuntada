@@ -17,9 +17,12 @@ import { AddParticipantDto } from "./dto/add-participant.dto";
 import { AuthParticipantDto } from "./dto/auth-participant.dto";
 import { ConfirmTransferDto } from "./dto/confirm-transfer.dto";
 import { CreateGatheringDto } from "./dto/create-gathering.dto";
+import { FinalizeGatheringDto } from "./dto/finalize-gathering.dto";
 import { GoogleParticipantDto } from "./dto/google-participant.dto";
 import { SetAvailabilityDto } from "./dto/set-availability.dto";
 import { UpdateDietaryProfileDto } from "./dto/update-dietary-profile.dto";
+import { UpdateExpenseDto } from "./dto/update-expense.dto";
+import { UpdateGatheringDto } from "./dto/update-gathering.dto";
 import { UpdatePaymentAliasDto } from "./dto/update-payment-alias.dto";
 import { UpdatePurchasePlanDto } from "./dto/update-purchase-plan.dto";
 import { UpdatePurchaseContributionStatusDto } from "./dto/update-purchase-contribution-status.dto";
@@ -121,6 +124,55 @@ export class GatheringsController {
   @Get(":gatheringId/matches")
   getMatches(@Param("gatheringId") gatheringId: string) {
     return this.gatheringsService.getMatches(gatheringId);
+  }
+
+  @Put(":gatheringId/participants/:participantId/finalization")
+  async finalizeGathering(
+    @Param("gatheringId") gatheringId: string,
+    @Param("participantId") participantId: string,
+    @Headers("x-participant-token") participantToken: string | undefined,
+    @Body() dto: FinalizeGatheringDto,
+  ) {
+    const gathering = await this.gatheringsService.finalizeGathering(
+      gatheringId,
+      participantId,
+      participantToken,
+      dto,
+    );
+    this.gatheringsGateway.gatheringChanged(gatheringId, "confirmed");
+    return gathering;
+  }
+
+  @Patch(":gatheringId/participants/:participantId/settings")
+  async updateGathering(
+    @Param("gatheringId") gatheringId: string,
+    @Param("participantId") participantId: string,
+    @Headers("x-participant-token") participantToken: string | undefined,
+    @Body() dto: UpdateGatheringDto,
+  ) {
+    const gathering = await this.gatheringsService.updateGathering(
+      gatheringId,
+      participantId,
+      participantToken,
+      dto,
+    );
+    this.gatheringsGateway.gatheringChanged(gatheringId, "updated");
+    return gathering;
+  }
+
+  @Delete(":gatheringId/participants/:participantId/settings")
+  async cancelGathering(
+    @Param("gatheringId") gatheringId: string,
+    @Param("participantId") participantId: string,
+    @Headers("x-participant-token") participantToken: string | undefined,
+  ) {
+    const gathering = await this.gatheringsService.cancelGathering(
+      gatheringId,
+      participantId,
+      participantToken,
+    );
+    this.gatheringsGateway.gatheringChanged(gatheringId, "cancelled");
+    return gathering;
   }
 
   @Put(":gatheringId/participants/:participantId/dietary-profile")
@@ -296,6 +348,48 @@ export class GatheringsController {
     );
     this.gatheringsGateway.expensesChanged(gatheringId, expense.paidBy.name);
     return expense;
+  }
+
+  @Patch(":gatheringId/participants/:participantId/expenses/:expenseId")
+  async updateExpense(
+    @Param("gatheringId") gatheringId: string,
+    @Param("participantId") participantId: string,
+    @Param("expenseId") expenseId: string,
+    @Headers("x-participant-token") participantToken: string | undefined,
+    @Body() dto: UpdateExpenseDto,
+  ) {
+    const result = await this.gatheringsService.updateExpense(
+      gatheringId,
+      participantId,
+      participantToken,
+      expenseId,
+      dto,
+    );
+    this.gatheringsGateway.expensesChanged(
+      gatheringId,
+      result.participantName,
+    );
+    return result.expense;
+  }
+
+  @Delete(":gatheringId/participants/:participantId/expenses/:expenseId")
+  async deleteExpense(
+    @Param("gatheringId") gatheringId: string,
+    @Param("participantId") participantId: string,
+    @Param("expenseId") expenseId: string,
+    @Headers("x-participant-token") participantToken: string | undefined,
+  ) {
+    const result = await this.gatheringsService.deleteExpense(
+      gatheringId,
+      participantId,
+      participantToken,
+      expenseId,
+    );
+    this.gatheringsGateway.expensesChanged(
+      gatheringId,
+      result.participantName,
+    );
+    return { id: result.id };
   }
 
   @Get(":gatheringId/expenses/settlement")

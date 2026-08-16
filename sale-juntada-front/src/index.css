@@ -747,6 +747,31 @@ button {
   cursor: pointer;
 }
 
+.section-heading-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.manage-button {
+  padding: 11px 15px;
+  border: 1px solid var(--ink);
+  border-radius: 11px;
+  background: var(--ink);
+  color: white;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.status-banner.cancelled {
+  border-color: #e4b6aa;
+  background: #fff0eb;
+  color: #8a3527;
+}
+
 .planning-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.65fr) minmax(280px, 0.75fr);
@@ -1346,6 +1371,50 @@ button {
 
 .expense-row b {
   font-size: 11px;
+}
+
+.expense-row-actions {
+  display: flex;
+  gap: 5px;
+}
+
+.expense-row-actions button {
+  min-height: 28px;
+  padding: 5px 7px;
+  border: 1px solid #d8ddd3;
+  border-radius: 8px;
+  background: white;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 8px;
+  font-weight: 850;
+}
+
+.expense-row-actions button:last-child {
+  border-color: #efc8be;
+  color: #a33c2c;
+}
+
+.expense-edit-sheet {
+  width: min(92vw, 460px);
+}
+
+.danger-zone-button {
+  width: 100%;
+  min-height: 44px;
+  margin-top: 8px;
+  border: 1px solid #e6b4aa;
+  border-radius: 12px;
+  background: #fff0ec;
+  color: #9a3324;
+  cursor: pointer;
+  font-weight: 850;
+}
+
+.danger-zone-button:disabled,
+.expense-row-actions button:disabled {
+  cursor: wait;
+  opacity: 0.6;
 }
 
 .settlement-card {
@@ -2692,6 +2761,24 @@ footer > span {
 
   .share-button {
     align-self: flex-start;
+  }
+
+  .section-heading-actions {
+    align-self: stretch;
+  }
+
+  .section-heading-actions button {
+    flex: 1;
+  }
+
+  .expense-row {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .expense-row-actions {
+    width: 100%;
+    padding-left: 43px;
   }
 
   .availability-card,
@@ -4861,5 +4948,39 @@ footer > span {
   .proposal .proposal-confirm {
     grid-column: 1 / -1;
     width: 100%;
+  }
+}
+
+@media (max-width: 540px) {
+  .responsibility-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .responsibility-tile {
+    width: 100%;
+  }
+
+  .responsibility-art {
+    height: 104px;
+  }
+
+  .responsibility-copy {
+    min-height: auto;
+    padding: 13px 12px 11px;
+  }
+
+  .responsibility-copy > div:first-child {
+    display: flex;
+    align-items: baseline;
+  }
+
+  .responsibility-copy > div:first-child > span {
+    text-align: right;
+  }
+
+  .contribution-form {
+    margin: 0 12px 12px;
+    padding: 12px;
   }
 }

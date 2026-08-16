@@ -370,6 +370,12 @@ test("el grupo elige responsables y el organizador edita la compra", async ({
     windowStart: "2026-07-25T03:00:00.000Z",
     windowEnd: "2026-07-28T02:59:59.000Z",
     durationMinutes: 180,
+    dailyStartMinutes: 780,
+    dailyEndMinutes: 1440,
+    slotStepMinutes: 480,
+    status: "OPEN",
+    finalizedStart: null,
+    finalizedEnd: null,
     participants: [
       {
         id: "organizer-purchase",
@@ -415,12 +421,15 @@ test("el grupo elige responsables y el organizador edita la compra", async ({
         assignedTo: null,
         assignedAt: null,
         isReady: false,
+        contributions: [],
       },
     ],
   };
   let purchaseToken = "";
   let meatQuantity = 0;
-  let responsibilityAction = "";
+  let contributionDescription = "";
+  let finalizationToken = "";
+  let finalizedStart = "";
 
   await page.addInitScript(() => {
     localStorage.setItem(
@@ -433,6 +442,10 @@ test("el grupo elige responsables y el organizador edita la compra", async ({
   });
   await page.route("**/api/gatherings**", async (route) => {
     const request = route.request();
+    if (request.url().endsWith("/catalog/purchase")) {
+      await route.fulfill({ status: 200, json: { version: 1, products: [] } });
+      return;
+    }
     if (request.url().includes("/expenses/settlement")) {
       await route.fulfill({ status: 200, json: emptySettlement });
       return;
@@ -441,13 +454,41 @@ test("el grupo elige responsables y el organizador edita la compra", async ({
       await route.fulfill({ status: 200, json: [match] });
       return;
     }
+    if (
+      request.url().endsWith("/finalization") &&
+      request.method() === "PUT"
+    ) {
+      finalizationToken = request.headers()["x-participant-token"];
+      const payload = request.postDataJSON() as {
+        startsAt: string;
+        endsAt: string;
+      };
+      finalizedStart = payload.startsAt;
+      await route.fulfill({
+        status: 200,
+        json: {
+          ...gathering,
+          status: "CONFIRMED",
+          finalizedStart: payload.startsAt,
+          finalizedEnd: payload.endsAt,
+          finalizedLocation: gathering.locationHint,
+        },
+      });
+      return;
+    }
     if (request.url().endsWith("/purchase") && request.method() === "GET") {
       await route.fulfill({ status: 200, json: plan });
       return;
     }
-    if (request.url().endsWith("/responsibility") && request.method() === "PUT") {
+    if (request.url().endsWith("/contribution") && request.method() === "PUT") {
       purchaseToken = request.headers()["x-participant-token"];
-      responsibilityAction = request.postDataJSON().action;
+      const payload = request.postDataJSON() as {
+        description: string;
+        quantity: number;
+        unit: string;
+      };
+      contributionDescription = payload.description;
+      meatQuantity = payload.quantity;
       await route.fulfill({
         status: 200,
         json: {
@@ -456,12 +497,21 @@ test("el grupo elige responsables y el organizador edita la compra", async ({
           persisted: true,
           items: plan.items.map((item) => ({
             ...item,
-            assignedTo: {
-              id: "organizer-purchase",
-              name: "Tomás",
-              avatarUrl: null,
-            },
-            assignedAt: "2026-08-13T12:00:00.000Z",
+            contributions: [{
+              id: "contribution-purchase",
+              description: payload.description,
+              quantity: payload.quantity,
+              unit: payload.unit,
+              note: null,
+              isReady: false,
+              createdAt: "2026-08-13T12:00:00.000Z",
+              updatedAt: "2026-08-13T12:00:00.000Z",
+              participant: {
+                id: "organizer-purchase",
+                name: "Tomás",
+                avatarUrl: null,
+              },
+            }],
           })),
         },
       });
@@ -491,15 +541,21 @@ test("el grupo elige responsables y el organizador edita la compra", async ({
   await expect(page.getByText("Tomás (vos)")).toBeVisible();
   await page.getByRole("button", { name: /Encontrar el mejor momento/i }).click();
   await page.getByRole("button", { name: /Confirmar esta fecha/i }).click();
+  await expect.poll(() => finalizationToken).toBe("organizer-purchase-token");
+  await expect.poll(() => finalizedStart).toBe(match.startsAt);
   await expect(page.getByRole("heading", { name: /Armemos la compra/i })).toBeVisible();
-  await expect(page.getByRole("heading", { name: /Elegí tu misión/i })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: /Elegí qué vas a llevar/i }),
+  ).toBeVisible();
 
   const meatMission = page.getByTestId("responsibility-meat");
-  await meatMission.getByRole("button", { name: /Me hago cargo/i }).click();
-  await expect.poll(() => responsibilityAction).toBe("claim");
-  await expect(meatMission.getByText("Vos")).toBeVisible();
-
-  await page.getByRole("button", { name: /Agregar Carne/i }).click();
+  await meatMission.getByRole("button", { name: /Sumar mi aporte/i }).click();
+  await meatMission.getByLabel(/Qué vas a llevar/i).fill("Carne para el asado");
+  await meatMission.getByLabel("Cantidad").fill("2");
+  await meatMission.getByLabel("Presentación").fill("kg");
+  await meatMission.getByRole("button", { name: /Guardar aporte/i }).click();
   await expect.poll(() => purchaseToken).toBe("organizer-purchase-token");
+  await expect.poll(() => contributionDescription).toBe("Carne para el asado");
   await expect.poll(() => meatQuantity).toBe(2);
+  await expect(meatMission.getByText("VOS LLEVÁS")).toBeVisible();
 });

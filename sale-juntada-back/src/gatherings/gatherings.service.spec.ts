@@ -838,3 +838,168 @@ describe("GatheringsService payment aliases", () => {
     });
   });
 });
+
+describe("GatheringsService lifecycle", () => {
+  const gathering = {
+    id: "gathering",
+    slug: "asado-demo",
+    title: "Asado demo",
+    status: "OPEN",
+    locationHint: "Yerba Buena",
+    locationLatitude: null,
+    locationLongitude: null,
+    windowStart: new Date("2026-08-20T22:00:00.000Z"),
+    windowEnd: new Date("2026-08-23T05:00:00.000Z"),
+    durationMinutes: 180,
+    dailyStartMinutes: 1140,
+    dailyEndMinutes: 1560,
+    slotStepMinutes: 60,
+  };
+
+  it("persiste la fecha elegida sólo para el organizador", async () => {
+    const prisma = {
+      participant: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: "organizer",
+          isOrganizer: true,
+          responseToken: "secret",
+          gathering,
+        }),
+      },
+      gathering: {
+        update: jest.fn().mockResolvedValue({}),
+        findUnique: jest.fn().mockResolvedValue({
+          ...gathering,
+          status: "CONFIRMED",
+          finalizedStart: new Date("2026-08-21T00:00:00.000Z"),
+          finalizedEnd: new Date("2026-08-21T03:00:00.000Z"),
+          participants: [],
+          proposals: [],
+        }),
+      },
+    } as unknown as PrismaService;
+
+    const result = await new GatheringsService(prisma).finalizeGathering(
+      "gathering",
+      "organizer",
+      "secret",
+      {
+        startsAt: "2026-08-21T00:00:00.000Z",
+        endsAt: "2026-08-21T03:00:00.000Z",
+        location: "Yerba Buena",
+      },
+    );
+
+    expect(result.status).toBe("CONFIRMED");
+    expect(prisma.gathering.update).toHaveBeenCalledWith({
+      where: { id: "gathering" },
+      data: expect.objectContaining({
+        status: "CONFIRMED",
+        finalizedLocation: "Yerba Buena",
+      }),
+    });
+  });
+
+  it("borra disponibilidades cuando cambia el rango", async () => {
+    const transaction = {
+      availability: { deleteMany: jest.fn().mockResolvedValue({ count: 2 }) },
+      proposal: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
+      gathering: { update: jest.fn().mockResolvedValue({}) },
+    };
+    const prisma = {
+      participant: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: "organizer",
+          isOrganizer: true,
+          responseToken: "secret",
+          gathering,
+        }),
+      },
+      gathering: {
+        findUnique: jest.fn().mockResolvedValue({
+          ...gathering,
+          participants: [],
+          proposals: [],
+        }),
+      },
+      $transaction: jest.fn((callback) => callback(transaction)),
+    } as unknown as PrismaService;
+
+    await new GatheringsService(prisma).updateGathering(
+      "gathering",
+      "organizer",
+      "secret",
+      {
+        windowStart: "2026-08-24T22:00:00.000Z",
+        windowEnd: "2026-08-27T05:00:00.000Z",
+      },
+    );
+
+    expect(transaction.availability.deleteMany).toHaveBeenCalledWith({
+      where: { participant: { gatheringId: "gathering" } },
+    });
+    expect(transaction.gathering.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: "OPEN",
+          finalizedStart: null,
+        }),
+      }),
+    );
+  });
+});
+
+describe("GatheringsService expense corrections", () => {
+  it("permite al pagador corregir un gasto y reabre las confirmaciones", async () => {
+    const transaction = {
+      gathering: {
+        findUnique: jest.fn().mockResolvedValue({
+          participants: [{ expensesReadyAt: new Date() }],
+          _count: { expenses: 1 },
+        }),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      participant: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+      expense: {
+        update: jest.fn().mockResolvedValue({
+          id: "expense",
+          description: "Bebidas",
+          amountCents: 12_000,
+          paidBy: { id: "participant", name: "Sofi" },
+        }),
+      },
+    };
+    const prisma = {
+      participant: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: "participant",
+          name: "Sofi",
+          isOrganizer: false,
+          responseToken: "secret",
+          gathering: { status: "OPEN" },
+        }),
+      },
+      expense: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: "expense",
+          paidByParticipantId: "participant",
+        }),
+      },
+      $transaction: jest.fn((callback) => callback(transaction)),
+    } as unknown as PrismaService;
+
+    const result = await new GatheringsService(prisma).updateExpense(
+      "gathering",
+      "participant",
+      "secret",
+      "expense",
+      { description: "Bebidas", amountCents: 12_000 },
+    );
+
+    expect(result.expense.amountCents).toBe(12_000);
+    expect(transaction.participant.updateMany).toHaveBeenCalledWith({
+      where: { gatheringId: "gathering" },
+      data: { expensesReadyAt: null },
+    });
+  });
+});

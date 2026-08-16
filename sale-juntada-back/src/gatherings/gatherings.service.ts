@@ -6,7 +6,12 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
-import { AvailabilityKind, Prisma, PurchaseCategory } from "@prisma/client";
+import {
+  AvailabilityKind,
+  GatheringStatus,
+  Prisma,
+  PurchaseCategory,
+} from "@prisma/client";
 import { randomBytes } from "node:crypto";
 import type { AuthIdentity } from "../auth/supabase-auth.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -15,9 +20,12 @@ import { AddParticipantDto } from "./dto/add-participant.dto";
 import { AuthParticipantDto } from "./dto/auth-participant.dto";
 import { ConfirmTransferDto } from "./dto/confirm-transfer.dto";
 import { CreateGatheringDto } from "./dto/create-gathering.dto";
+import { FinalizeGatheringDto } from "./dto/finalize-gathering.dto";
 import { GoogleParticipantDto } from "./dto/google-participant.dto";
 import { SetAvailabilityDto } from "./dto/set-availability.dto";
 import { UpdateDietaryProfileDto } from "./dto/update-dietary-profile.dto";
+import { UpdateExpenseDto } from "./dto/update-expense.dto";
+import { UpdateGatheringDto } from "./dto/update-gathering.dto";
 import { UpdatePaymentAliasDto } from "./dto/update-payment-alias.dto";
 import { UpdatePurchasePlanDto } from "./dto/update-purchase-plan.dto";
 import { UpdatePurchaseContributionStatusDto } from "./dto/update-purchase-contribution-status.dto";
@@ -318,6 +326,153 @@ export class GatheringsService {
     return gathering;
   }
 
+  async finalizeGathering(
+    gatheringId: string,
+    participantId: string,
+    participantToken: string | undefined,
+    dto: FinalizeGatheringDto,
+  ) {
+    const organizer = await this.requireOrganizer(
+      gatheringId,
+      participantId,
+      participantToken,
+    );
+    const startsAt = new Date(dto.startsAt);
+    const endsAt = new Date(dto.endsAt);
+    const gathering = organizer.gathering;
+
+    if (gathering.status === GatheringStatus.CANCELLED) {
+      throw new ConflictException("La juntada está cancelada");
+    }
+    if (
+      startsAt < gathering.windowStart ||
+      endsAt > gathering.windowEnd ||
+      startsAt >= endsAt ||
+      endsAt.getTime() - startsAt.getTime() !==
+        gathering.durationMinutes * 60_000
+    ) {
+      throw new BadRequestException(
+        "La fecha elegida no pertenece a las opciones de la juntada",
+      );
+    }
+
+    await this.prisma.gathering.update({
+      where: { id: gatheringId },
+      data: {
+        status: GatheringStatus.CONFIRMED,
+        finalizedStart: startsAt,
+        finalizedEnd: endsAt,
+        finalizedLocation:
+          dto.location?.trim() || gathering.locationHint || null,
+      },
+    });
+    return this.getBySlug(gathering.slug);
+  }
+
+  async updateGathering(
+    gatheringId: string,
+    participantId: string,
+    participantToken: string | undefined,
+    dto: UpdateGatheringDto,
+  ) {
+    const organizer = await this.requireOrganizer(
+      gatheringId,
+      participantId,
+      participantToken,
+    );
+    const current = organizer.gathering;
+    if (current.status === GatheringStatus.CANCELLED) {
+      throw new ConflictException("La juntada está cancelada");
+    }
+
+    const windowStart = dto.windowStart
+      ? new Date(dto.windowStart)
+      : current.windowStart;
+    const windowEnd = dto.windowEnd ? new Date(dto.windowEnd) : current.windowEnd;
+    const durationMinutes = dto.durationMinutes ?? current.durationMinutes;
+    const dailyStartMinutes =
+      dto.dailyStartMinutes ?? current.dailyStartMinutes;
+    const dailyEndMinutes = dto.dailyEndMinutes ?? current.dailyEndMinutes;
+    const slotStepMinutes = dto.slotStepMinutes ?? current.slotStepMinutes;
+
+    if (windowStart >= windowEnd) {
+      throw new BadRequestException("El rango de fechas no es válido");
+    }
+    if (dailyEndMinutes - dailyStartMinutes < durationMinutes) {
+      throw new BadRequestException(
+        "La franja horaria debe permitir al menos una opción completa",
+      );
+    }
+
+    const scheduleChanged =
+      windowStart.getTime() !== current.windowStart.getTime() ||
+      windowEnd.getTime() !== current.windowEnd.getTime() ||
+      durationMinutes !== current.durationMinutes ||
+      dailyStartMinutes !== current.dailyStartMinutes ||
+      dailyEndMinutes !== current.dailyEndMinutes ||
+      slotStepMinutes !== current.slotStepMinutes;
+    const locationHint = dto.locationHint?.trim();
+    const locationChanged =
+      dto.locationHint !== undefined && locationHint !== current.locationHint;
+
+    await this.prisma.$transaction(async (transaction) => {
+      if (scheduleChanged) {
+        await transaction.availability.deleteMany({
+          where: { participant: { gatheringId } },
+        });
+        await transaction.proposal.deleteMany({ where: { gatheringId } });
+      }
+      await transaction.gathering.update({
+        where: { id: gatheringId },
+        data: {
+          title: dto.title?.trim() ?? current.title,
+          locationHint:
+            dto.locationHint === undefined ? current.locationHint : locationHint || null,
+          locationLatitude: locationChanged ? null : current.locationLatitude,
+          locationLongitude: locationChanged ? null : current.locationLongitude,
+          windowStart,
+          windowEnd,
+          durationMinutes,
+          dailyStartMinutes,
+          dailyEndMinutes,
+          slotStepMinutes,
+          ...(scheduleChanged
+            ? {
+                status: GatheringStatus.OPEN,
+                finalizedStart: null,
+                finalizedEnd: null,
+                finalizedLocation: null,
+              }
+            : {}),
+        },
+      });
+    });
+
+    return this.getBySlug(current.slug);
+  }
+
+  async cancelGathering(
+    gatheringId: string,
+    participantId: string,
+    participantToken: string | undefined,
+  ) {
+    const organizer = await this.requireOrganizer(
+      gatheringId,
+      participantId,
+      participantToken,
+    );
+    await this.prisma.gathering.update({
+      where: { id: gatheringId },
+      data: {
+        status: GatheringStatus.CANCELLED,
+        finalizedStart: null,
+        finalizedEnd: null,
+        finalizedLocation: null,
+      },
+    });
+    return this.getBySlug(organizer.gathering.slug);
+  }
+
   async addParticipant(gatheringId: string, dto: AddParticipantDto) {
     await this.ensureGathering(gatheringId);
     return this.prisma.participant.create({
@@ -394,6 +549,12 @@ export class GatheringsService {
     if (!participant) throw new NotFoundException("Participante no encontrado");
     if (!participantToken || participant.responseToken !== participantToken) {
       throw new UnauthorizedException("No podés editar esta disponibilidad");
+    }
+    if (participant.gathering.status === GatheringStatus.CANCELLED) {
+      throw new ConflictException("La juntada está cancelada");
+    }
+    if (participant.gathering.status === GatheringStatus.CONFIRMED) {
+      throw new ConflictException("La fecha de la juntada ya está confirmada");
     }
 
     const slots = dto.slots.map((slot) => ({
@@ -1083,6 +1244,7 @@ export class GatheringsService {
   ) {
     const participant = await this.prisma.participant.findFirst({
       where: { id: participantId, gatheringId },
+      include: { gathering: { select: { status: true } } },
     });
     if (!participant) throw new NotFoundException("Participante no encontrado");
     if (!participantToken || participant.responseToken !== participantToken) {
@@ -1090,32 +1252,12 @@ export class GatheringsService {
         "No podés cargar gastos por otra persona",
       );
     }
+    if (participant.gathering.status === GatheringStatus.CANCELLED) {
+      throw new ConflictException("La juntada está cancelada");
+    }
 
     return this.prisma.$transaction(async (transaction) => {
-      const state = await transaction.gathering.findUnique({
-        where: { id: gatheringId },
-        select: {
-          expenseRound: true,
-          participants: { select: { expensesReadyAt: true } },
-          _count: { select: { expenses: true } },
-        },
-      });
-      const wasClosed =
-        (state?.participants.length ?? 0) > 0 &&
-        state?.participants.every(
-          (candidate) => candidate.expensesReadyAt !== null,
-        ) &&
-        (state?._count.expenses ?? 0) > 0;
-      if (wasClosed) {
-        await transaction.gathering.update({
-          where: { id: gatheringId },
-          data: { expenseRound: { increment: 1 } },
-        });
-      }
-      await transaction.participant.updateMany({
-        where: { gatheringId },
-        data: { expensesReadyAt: null },
-      });
+      await this.reopenExpenses(transaction, gatheringId);
       return transaction.expense.create({
         data: {
           gatheringId,
@@ -1128,6 +1270,78 @@ export class GatheringsService {
         },
       });
     });
+  }
+
+  async updateExpense(
+    gatheringId: string,
+    participantId: string,
+    participantToken: string | undefined,
+    expenseId: string,
+    dto: UpdateExpenseDto,
+  ) {
+    const participant = await this.requireParticipant(
+      gatheringId,
+      participantId,
+      participantToken,
+    );
+    const expense = await this.prisma.expense.findFirst({
+      where: { id: expenseId, gatheringId },
+    });
+    if (!expense) throw new NotFoundException("Gasto no encontrado");
+    if (
+      expense.paidByParticipantId !== participant.id &&
+      !participant.isOrganizer
+    ) {
+      throw new ForbiddenException(
+        "Sólo quien pagó o quien organiza puede corregir este gasto",
+      );
+    }
+
+    const updated = await this.prisma.$transaction(async (transaction) => {
+      await this.reopenExpenses(transaction, gatheringId);
+      return transaction.expense.update({
+        where: { id: expenseId },
+        data: {
+          description: dto.description.trim(),
+          amountCents: dto.amountCents,
+        },
+        include: {
+          paidBy: { select: { id: true, name: true, avatarUrl: true } },
+        },
+      });
+    });
+    return { expense: updated, participantName: participant.name };
+  }
+
+  async deleteExpense(
+    gatheringId: string,
+    participantId: string,
+    participantToken: string | undefined,
+    expenseId: string,
+  ) {
+    const participant = await this.requireParticipant(
+      gatheringId,
+      participantId,
+      participantToken,
+    );
+    const expense = await this.prisma.expense.findFirst({
+      where: { id: expenseId, gatheringId },
+    });
+    if (!expense) throw new NotFoundException("Gasto no encontrado");
+    if (
+      expense.paidByParticipantId !== participant.id &&
+      !participant.isOrganizer
+    ) {
+      throw new ForbiddenException(
+        "Sólo quien pagó o quien organiza puede eliminar este gasto",
+      );
+    }
+
+    await this.prisma.$transaction(async (transaction) => {
+      await this.reopenExpenses(transaction, gatheringId);
+      await transaction.expense.delete({ where: { id: expenseId } });
+    });
+    return { id: expenseId, participantName: participant.name };
   }
 
   async getExpenseSettlement(gatheringId: string) {
@@ -1462,9 +1676,79 @@ export class GatheringsService {
     });
   }
 
+  private async reopenExpenses(
+    transaction: Prisma.TransactionClient,
+    gatheringId: string,
+  ) {
+    const state = await transaction.gathering.findUnique({
+      where: { id: gatheringId },
+      select: {
+        participants: { select: { expensesReadyAt: true } },
+        _count: { select: { expenses: true } },
+      },
+    });
+    const wasClosed =
+      (state?.participants.length ?? 0) > 0 &&
+      state?.participants.every(
+        (candidate) => candidate.expensesReadyAt !== null,
+      ) &&
+      (state?._count.expenses ?? 0) > 0;
+    if (wasClosed) {
+      await transaction.gathering.update({
+        where: { id: gatheringId },
+        data: { expenseRound: { increment: 1 } },
+      });
+    }
+    await transaction.participant.updateMany({
+      where: { gatheringId },
+      data: { expensesReadyAt: null },
+    });
+  }
+
+  private async requireParticipant(
+    gatheringId: string,
+    participantId: string,
+    participantToken: string | undefined,
+  ) {
+    const participant = await this.prisma.participant.findFirst({
+      where: { id: participantId, gatheringId },
+      include: { gathering: { select: { status: true } } },
+    });
+    if (!participant) throw new NotFoundException("Participante no encontrado");
+    if (!participantToken || participant.responseToken !== participantToken) {
+      throw new UnauthorizedException("No podés modificar datos de otra persona");
+    }
+    if (participant.gathering.status === GatheringStatus.CANCELLED) {
+      throw new ConflictException("La juntada está cancelada");
+    }
+    return participant;
+  }
+
+  private async requireOrganizer(
+    gatheringId: string,
+    participantId: string,
+    participantToken: string | undefined,
+  ) {
+    const participant = await this.prisma.participant.findFirst({
+      where: { id: participantId, gatheringId },
+      include: { gathering: true },
+    });
+    if (!participant) throw new NotFoundException("Participante no encontrado");
+    if (!participantToken || participant.responseToken !== participantToken) {
+      throw new UnauthorizedException("No podés administrar esta juntada");
+    }
+    if (!participant.isOrganizer) {
+      throw new ForbiddenException("Sólo quien organiza puede hacer este cambio");
+    }
+    return participant;
+  }
+
   private async ensureGathering(id: string) {
     const gathering = await this.prisma.gathering.findUnique({ where: { id } });
     if (!gathering) throw new NotFoundException("Juntada no encontrada");
+    if (gathering.status === GatheringStatus.CANCELLED) {
+      throw new ConflictException("La juntada está cancelada");
+    }
   }
 
   private async requirePurchaseParticipant(
@@ -1475,12 +1759,20 @@ export class GatheringsService {
     const participant = await this.prisma.participant.findFirst({
       where: { id: participantId, gatheringId },
       include: {
-        gathering: { select: { _count: { select: { participants: true } } } },
+        gathering: {
+          select: {
+            status: true,
+            _count: { select: { participants: true } },
+          },
+        },
       },
     });
     if (!participant) throw new NotFoundException("Participante no encontrado");
     if (!participantToken || participant.responseToken !== participantToken) {
       throw new UnauthorizedException("No podés editar aportes de otra persona");
+    }
+    if (participant.gathering.status === GatheringStatus.CANCELLED) {
+      throw new ConflictException("La juntada está cancelada");
     }
     return participant;
   }

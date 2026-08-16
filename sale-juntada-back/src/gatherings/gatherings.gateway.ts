@@ -132,6 +132,15 @@ export class GatheringsGateway implements OnGatewayDisconnect {
     });
   }
 
+  gatheringChanged(
+    gatheringId: string,
+    action: "confirmed" | "updated" | "cancelled",
+  ) {
+    this.server.to(this.room(gatheringId)).emit("gathering:changed", {
+      action,
+    });
+  }
+
   purchaseChanged(
     gatheringId: string,
     activity?: {

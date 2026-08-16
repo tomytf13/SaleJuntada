@@ -12,6 +12,7 @@ import { AnimatePresence, m } from "framer-motion";
 import { useLocation, useNavigate } from "react-router-dom";
 import { io, Socket } from "socket.io-client";
 import {
+  Expense,
   ExpenseSettlement,
   Gathering,
   GatheringHistoryItem,
@@ -19,6 +20,7 @@ import {
   Match,
   PaymentDetails,
   SOCKET_URL,
+  UpdateGatheringInput,
 } from "./services/gatheringService";
 import type { SelectedLocation } from "./components/LocationPicker";
 import {
@@ -32,6 +34,7 @@ import { AccountDialog } from "./components/AccountDialog";
 import { PartyGames } from "./components/PartyGames";
 import { PaymentAliasEditor } from "./components/PaymentAliasEditor";
 import { PwaStatus } from "./components/PwaStatus";
+import { GatheringManagementDialog } from "./components/GatheringManagementDialog";
 import { useAuth } from "./auth/useAuth";
 import { useActiveSection } from "./hooks/useActiveSection";
 import { formatAvailabilitySummary } from "./utils/availability";
@@ -399,6 +402,13 @@ export default function Home() {
   const [isSavingExpense, setIsSavingExpense] = useState(false);
   const [expenseAmount, setExpenseAmount] = useState("");
   const [isMarkingExpensesReady, setIsMarkingExpensesReady] = useState(false);
+  const [isConfirmingGathering, setIsConfirmingGathering] = useState(false);
+  const [showManageGathering, setShowManageGathering] = useState(false);
+  const [isManagingGathering, setIsManagingGathering] = useState(false);
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  const [expenseEditDescription, setExpenseEditDescription] = useState("");
+  const [expenseEditAmount, setExpenseEditAmount] = useState("");
+  const [isUpdatingExpense, setIsUpdatingExpense] = useState(false);
   const [liveMembers, setLiveMembers] = useState<
     Array<{ participantId: string; name: string }>
   >([]);
@@ -555,6 +565,7 @@ export default function Home() {
       .then((gathering) => {
         if (cancelled) return;
         setActiveGathering(gathering);
+        setConfirmedSlot(gathering.finalizedStart ?? null);
         setPaymentDetails(null);
         setEventName(gathering.title);
         setLocation(gathering.locationHint ?? "Lugar a definir");
@@ -743,6 +754,27 @@ export default function Home() {
     socket.on("expenses:changed", refreshExpenses);
     socket.on("transfers:changed", refreshExpenses);
     socket.on(
+      "gathering:changed",
+      async (payload?: { action?: "confirmed" | "updated" | "cancelled" }) => {
+        const refreshed = await gatheringService.getBySlug(activeGathering.slug);
+        setActiveGathering(refreshed);
+        setEventName(refreshed.title);
+        setLocation(
+          refreshed.finalizedLocation ??
+            refreshed.locationHint ??
+            "Lugar a definir",
+        );
+        setConfirmedSlot(refreshed.finalizedStart ?? null);
+        if (payload?.action === "confirmed") {
+          showNotice("El organizador confirmó la fecha.");
+        } else if (payload?.action === "cancelled") {
+          showNotice("La juntada fue cancelada.");
+        } else if (payload?.action === "updated") {
+          showNotice("El organizador actualizó la juntada.");
+        }
+      },
+    );
+    socket.on(
       "dietary:changed",
       async (payload?: { participantName?: string }) => {
         const refreshed = await gatheringService.getBySlug(
@@ -789,7 +821,7 @@ export default function Home() {
       setAnalyzingMembers([]);
       setIsLiveConnected(false);
     };
-  }, [activeGathering, participantSession]);
+  }, [activeGathering, participantSession, showNotice]);
 
   const rankedSlots = useMemo(() => {
     return slots
@@ -804,7 +836,15 @@ export default function Home() {
   }, [slots, yourSlots]);
 
   const toggleSlot = async (slotId: string) => {
-    setConfirmedSlot(null);
+    if (activeGathering?.status === "CONFIRMED") {
+      showNotice("La fecha ya está confirmada. El organizador puede editarla.");
+      return;
+    }
+    if (activeGathering?.status === "CANCELLED") {
+      showNotice("Esta juntada fue cancelada.");
+      return;
+    }
+    if (!activeGathering) setConfirmedSlot(null);
     if (activeGathering && !participantSession) {
       setShowJoin(true);
       return;
@@ -1159,10 +1199,183 @@ export default function Home() {
     }
   };
 
-  const confirmProposal = (slotId: string) => {
-    setConfirmedSlot(slotId);
-    setShowResults(false);
-    window.scrollTo({ top: 0, behavior: "smooth" });
+  const confirmProposal = async (slotId: string) => {
+    if (!activeGathering) {
+      setConfirmedSlot(slotId);
+      setShowResults(false);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+    if (!participantSession) return;
+    const slot = slots.find((candidate) => candidate.id === slotId);
+    const organizer = activeGathering.participants.find(
+      (participant) => participant.id === participantSession.participantId,
+    );
+    if (!slot || !organizer?.isOrganizer) return;
+
+    setIsConfirmingGathering(true);
+    setApiError("");
+    try {
+      const updated = await gatheringService.finalizeGathering(
+        activeGathering.id,
+        participantSession.participantId,
+        participantSession.responseToken,
+        {
+          startsAt: slot.startsAt,
+          endsAt: slot.endsAt,
+          location: activeGathering.locationHint ?? location,
+        },
+      );
+      setActiveGathering(updated);
+      setConfirmedSlot(updated.finalizedStart ?? slot.id);
+      setLocation(
+        updated.finalizedLocation ?? updated.locationHint ?? "Lugar a definir",
+      );
+      setShowResults(false);
+      showNotice("Fecha confirmada y guardada para todo el grupo.");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch (error) {
+      setApiError(
+        error instanceof Error
+          ? error.message
+          : "No pudimos confirmar la fecha.",
+      );
+    } finally {
+      setIsConfirmingGathering(false);
+    }
+  };
+
+  const saveGatheringSettings = async (input: UpdateGatheringInput) => {
+    if (!activeGathering || !participantSession) return;
+    setIsManagingGathering(true);
+    setApiError("");
+    try {
+      const updated = await gatheringService.updateGathering(
+        activeGathering.id,
+        participantSession.participantId,
+        participantSession.responseToken,
+        input,
+      );
+      setActiveGathering(updated);
+      setEventName(updated.title);
+      setLocation(updated.locationHint ?? "Lugar a definir");
+      setConfirmedSlot(updated.finalizedStart ?? null);
+      setYourSlots(
+        updated.participants
+          .find(
+            (participant) =>
+              participant.id === participantSession.participantId,
+          )
+          ?.availabilities?.map((availability) => availability.startsAt) ?? [],
+      );
+      setMatches(await gatheringService.getMatches(updated.id));
+      setShowManageGathering(false);
+      showNotice("Juntada actualizada para todo el grupo.");
+    } catch (error) {
+      setApiError(
+        error instanceof Error
+          ? error.message
+          : "No pudimos actualizar la juntada.",
+      );
+    } finally {
+      setIsManagingGathering(false);
+    }
+  };
+
+  const cancelActiveGathering = async () => {
+    if (!activeGathering || !participantSession) return;
+    setIsManagingGathering(true);
+    setApiError("");
+    try {
+      const updated = await gatheringService.cancelGathering(
+        activeGathering.id,
+        participantSession.participantId,
+        participantSession.responseToken,
+      );
+      setActiveGathering(updated);
+      setConfirmedSlot(null);
+      setShowManageGathering(false);
+      showNotice("La juntada quedó cancelada.");
+    } catch (error) {
+      setApiError(
+        error instanceof Error
+          ? error.message
+          : "No pudimos cancelar la juntada.",
+      );
+    } finally {
+      setIsManagingGathering(false);
+    }
+  };
+
+  const openExpenseEditor = (expense: Expense) => {
+    setEditingExpense(expense);
+    setExpenseEditDescription(expense.description);
+    setExpenseEditAmount(
+      Math.round(expense.amountCents / 100).toLocaleString("es-AR"),
+    );
+  };
+
+  const updateActiveExpense = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!activeGathering || !participantSession || !editingExpense) return;
+    const amount = Number(expenseEditAmount.replace(/\./g, ""));
+    if (
+      expenseEditDescription.trim().length < 2 ||
+      !Number.isFinite(amount) ||
+      amount <= 0
+    ) {
+      return;
+    }
+    setIsUpdatingExpense(true);
+    setApiError("");
+    try {
+      await gatheringService.updateExpense(
+        activeGathering.id,
+        participantSession.participantId,
+        participantSession.responseToken,
+        editingExpense.id,
+        {
+          description: expenseEditDescription.trim(),
+          amountCents: Math.round(amount * 100),
+        },
+      );
+      setExpenseSettlement(
+        await gatheringService.getExpenseSettlement(activeGathering.id),
+      );
+      setEditingExpense(null);
+      showNotice("Gasto corregido y cuentas recalculadas.");
+    } catch (error) {
+      setApiError(
+        error instanceof Error ? error.message : "No pudimos corregir el gasto.",
+      );
+    } finally {
+      setIsUpdatingExpense(false);
+    }
+  };
+
+  const deleteActiveExpense = async (expense: Expense) => {
+    if (!activeGathering || !participantSession) return;
+    if (!window.confirm(`¿Eliminar el gasto “${expense.description}”?`)) return;
+    setIsUpdatingExpense(true);
+    setApiError("");
+    try {
+      await gatheringService.deleteExpense(
+        activeGathering.id,
+        participantSession.participantId,
+        participantSession.responseToken,
+        expense.id,
+      );
+      setExpenseSettlement(
+        await gatheringService.getExpenseSettlement(activeGathering.id),
+      );
+      showNotice("Gasto eliminado y cuentas recalculadas.");
+    } catch (error) {
+      setApiError(
+        error instanceof Error ? error.message : "No pudimos eliminar el gasto.",
+      );
+    } finally {
+      setIsUpdatingExpense(false);
+    }
   };
 
   const confirmed = slots.find((slot) => slot.id === confirmedSlot);
@@ -1550,6 +1763,13 @@ export default function Home() {
         </div>
       )}
 
+      {activeGathering?.status === "CANCELLED" ? (
+        <div className="status-banner cancelled" role="status">
+          Esta juntada fue cancelada. La información queda visible, pero ya no
+          acepta cambios.
+        </div>
+      ) : null}
+
       <AnimatePresence>
         {confirmed ? (
           <m.section
@@ -1614,9 +1834,21 @@ export default function Home() {
                 </a>
               )}
           </div>
-          <button className="share-button" onClick={shareEvent}>
-            <span aria-hidden="true">↗</span> Compartir link
-          </button>
+          <div className="section-heading-actions">
+            {currentParticipant?.isOrganizer &&
+            activeGathering?.status !== "CANCELLED" ? (
+              <button
+                className="manage-button"
+                type="button"
+                onClick={() => setShowManageGathering(true)}
+              >
+                Administrar
+              </button>
+            ) : null}
+            <button className="share-button" onClick={shareEvent}>
+              <span aria-hidden="true">↗</span> Compartir link
+            </button>
+          </div>
         </div>
 
         <div className="planning-grid">
@@ -1689,7 +1921,11 @@ export default function Home() {
                           className={`time-option ${selected ? "selected" : ""}`}
                           aria-label={`${slot.day} ${slot.date} · ${slot.time}`}
                           aria-pressed={selected}
-                          disabled={isSavingAvailability}
+                          disabled={
+                            isSavingAvailability ||
+                            activeGathering?.status === "CONFIRMED" ||
+                            activeGathering?.status === "CANCELLED"
+                          }
                           onClick={() => toggleSlot(slot.id)}
                           whileTap={{ scale: 0.965 }}
                           layout
@@ -1848,6 +2084,7 @@ export default function Home() {
         <m.button
           className="find-button"
           onClick={findBestMoment}
+          disabled={activeGathering?.status === "CANCELLED"}
           whileHover={{ y: -2 }}
           whileTap={{ scale: 0.975 }}
           transition={quickTransition}
@@ -2021,6 +2258,7 @@ export default function Home() {
                       minLength={2}
                       maxLength={80}
                       onChange={signalExpenseTyping}
+                      disabled={activeGathering.status === "CANCELLED"}
                       required
                     />
                   </label>
@@ -2037,6 +2275,7 @@ export default function Home() {
                           setExpenseAmount(formatThousands(event.target.value));
                           signalExpenseTyping();
                         }}
+                        disabled={activeGathering.status === "CANCELLED"}
                         placeholder="0"
                         required
                       />
@@ -2045,9 +2284,15 @@ export default function Home() {
                   <button
                     className="primary-button full"
                     type="submit"
-                    disabled={isSavingExpense}
+                    disabled={
+                      isSavingExpense || activeGathering.status === "CANCELLED"
+                    }
                   >
-                    {isSavingExpense ? "Calculando…" : "Agregar y recalcular"}
+                    {activeGathering.status === "CANCELLED"
+                      ? "Juntada cancelada"
+                      : isSavingExpense
+                        ? "Calculando…"
+                        : "Agregar y recalcular"}
                   </button>
                 </form>
 
@@ -2079,6 +2324,28 @@ export default function Home() {
                           <small>Pagó {expense.paidBy.name}</small>
                         </div>
                         <b>{formatMoney(expense.amountCents)}</b>
+                        {currentParticipant &&
+                        activeGathering.status !== "CANCELLED" &&
+                        (expense.paidByParticipantId === currentParticipant.id ||
+                          currentParticipant.isOrganizer) ? (
+                          <span className="expense-row-actions">
+                            <button
+                              type="button"
+                              onClick={() => openExpenseEditor(expense)}
+                              aria-label={`Editar ${expense.description}`}
+                            >
+                              Editar
+                            </button>
+                            <button
+                              type="button"
+                              disabled={isUpdatingExpense}
+                              onClick={() => void deleteActiveExpense(expense)}
+                              aria-label={`Eliminar ${expense.description}`}
+                            >
+                              Eliminar
+                            </button>
+                          </span>
+                        ) : null}
                       </m.div>
                     ))}
                   </AnimatePresence>
@@ -2393,7 +2660,9 @@ export default function Home() {
                       : `Falta ${slot.missing}`}
                   </span>
                 </div>
-                <button onClick={() => confirmProposal(slot.id)}>Elegir</button>
+                <button onClick={() => void confirmProposal(slot.id)}>
+                  Elegir
+                </button>
               </m.article>
             ))}
           {activeGathering &&
@@ -2463,13 +2732,18 @@ export default function Home() {
                       </span>
                     )}
                   </div>
-                  {currentParticipant?.isOrganizer && (
+                  {currentParticipant?.isOrganizer &&
+                    activeGathering.status !== "CONFIRMED" &&
+                    activeGathering.status !== "CANCELLED" && (
                     <button
                       type="button"
                       className="proposal-confirm"
-                      onClick={() => confirmProposal(match.startsAt)}
+                      disabled={isConfirmingGathering}
+                      onClick={() => void confirmProposal(match.startsAt)}
                     >
-                      Confirmar esta fecha
+                      {isConfirmingGathering
+                        ? "Confirmando…"
+                        : "Confirmar esta fecha"}
                     </button>
                   )}
                 </m.article>
@@ -2867,6 +3141,67 @@ export default function Home() {
             </small>
           </>
         ) : null}
+      </AnimatedDialog>
+
+      <GatheringManagementDialog
+        open={showManageGathering}
+        gathering={activeGathering}
+        isSaving={isManagingGathering}
+        onClose={() => setShowManageGathering(false)}
+        onSave={saveGatheringSettings}
+        onCancelGathering={cancelActiveGathering}
+      />
+
+      <AnimatedDialog
+        open={Boolean(editingExpense)}
+        onClose={() => setEditingExpense(null)}
+        panelClassName="expense-edit-sheet"
+        label="Corregir gasto"
+        as="form"
+        onSubmit={updateActiveExpense}
+      >
+        <button
+          type="button"
+          className="close-button"
+          onClick={() => setEditingExpense(null)}
+          aria-label="Cerrar"
+        >
+          ×
+        </button>
+        <span className="eyebrow">CUENTAS DEL GRUPO</span>
+        <h2>Corregir gasto</h2>
+        <p>El total y las transferencias se recalcularán automáticamente.</p>
+        <label>
+          Concepto
+          <input
+            value={expenseEditDescription}
+            onChange={(event) => setExpenseEditDescription(event.target.value)}
+            minLength={2}
+            maxLength={80}
+            required
+          />
+        </label>
+        <label>
+          Monto
+          <div className="money-input">
+            <span>$</span>
+            <input
+              inputMode="numeric"
+              value={expenseEditAmount}
+              onChange={(event) =>
+                setExpenseEditAmount(formatThousands(event.target.value))
+              }
+              required
+            />
+          </div>
+        </label>
+        <button
+          className="primary-button full"
+          type="submit"
+          disabled={isUpdatingExpense}
+        >
+          {isUpdatingExpense ? "Recalculando…" : "Guardar corrección"}
+        </button>
       </AnimatedDialog>
 
       <AccountDialog

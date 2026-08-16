@@ -32,6 +32,10 @@ export type Gathering = {
   dailyStartMinutes?: number;
   dailyEndMinutes?: number;
   slotStepMinutes?: number;
+  status: "DRAFT" | "OPEN" | "PROPOSED" | "CONFIRMED" | "CANCELLED";
+  finalizedStart?: string | null;
+  finalizedEnd?: string | null;
+  finalizedLocation?: string | null;
   participants: Participant[];
   proposals?: unknown[];
 };
@@ -127,6 +131,17 @@ export type ExpenseSettlement = {
     amountCents: number;
     confirmedAt: string;
   }>;
+};
+
+export type UpdateGatheringInput = {
+  title: string;
+  locationHint: string;
+  windowStart: string;
+  windowEnd: string;
+  durationMinutes: number;
+  dailyStartMinutes: number;
+  dailyEndMinutes: number;
+  slotStepMinutes: number;
 };
 
 export type PaymentDetails = {
@@ -352,6 +367,52 @@ export const gatheringService = {
     return request<Match[]>(`/gatherings/${gatheringId}/matches`);
   },
 
+  finalizeGathering(
+    gatheringId: string,
+    participantId: string,
+    participantToken: string,
+    input: { startsAt: string; endsAt: string; location?: string },
+  ) {
+    return request<Gathering>(
+      `/gatherings/${gatheringId}/participants/${participantId}/finalization`,
+      {
+        method: "PUT",
+        headers: { "x-participant-token": participantToken },
+        body: JSON.stringify(input),
+      },
+    );
+  },
+
+  updateGathering(
+    gatheringId: string,
+    participantId: string,
+    participantToken: string,
+    input: UpdateGatheringInput,
+  ) {
+    return request<Gathering>(
+      `/gatherings/${gatheringId}/participants/${participantId}/settings`,
+      {
+        method: "PATCH",
+        headers: { "x-participant-token": participantToken },
+        body: JSON.stringify(input),
+      },
+    );
+  },
+
+  cancelGathering(
+    gatheringId: string,
+    participantId: string,
+    participantToken: string,
+  ) {
+    return request<Gathering>(
+      `/gatherings/${gatheringId}/participants/${participantId}/settings`,
+      {
+        method: "DELETE",
+        headers: { "x-participant-token": participantToken },
+      },
+    );
+  },
+
   updateDietaryProfile(
     gatheringId: string,
     participantId: string,
@@ -508,6 +569,38 @@ export const gatheringService = {
         method: "POST",
         headers: { "x-participant-token": participantToken },
         body: JSON.stringify(input),
+      },
+    );
+  },
+
+  updateExpense(
+    gatheringId: string,
+    participantId: string,
+    participantToken: string,
+    expenseId: string,
+    input: { description: string; amountCents: number },
+  ) {
+    return request<Expense>(
+      `/gatherings/${gatheringId}/participants/${participantId}/expenses/${expenseId}`,
+      {
+        method: "PATCH",
+        headers: { "x-participant-token": participantToken },
+        body: JSON.stringify(input),
+      },
+    );
+  },
+
+  deleteExpense(
+    gatheringId: string,
+    participantId: string,
+    participantToken: string,
+    expenseId: string,
+  ) {
+    return request<{ id: string }>(
+      `/gatherings/${gatheringId}/participants/${participantId}/expenses/${expenseId}`,
+      {
+        method: "DELETE",
+        headers: { "x-participant-token": participantToken },
       },
     );
   },
