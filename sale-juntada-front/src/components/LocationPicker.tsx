@@ -21,6 +21,27 @@ type LocationPickerProps = {
 
 const defaultCenter: [number, number] = [-65.2176, -26.8083];
 
+/**
+ * Fuente de tiles del mapa.
+ *
+ * La Tile Usage Policy de OpenStreetMap prohíbe usar `tile.openstreetmap.org`
+ * desde una aplicación: bloquean por Referer y user-agent, sin aviso. Sirve
+ * para desarrollo, pero en producción hay que apuntar `VITE_MAP_TILES_URL` a
+ * un proveedor propio (MapTiler, Protomaps y similares tienen plan gratuito).
+ */
+const tilesUrl =
+  import.meta.env.VITE_MAP_TILES_URL?.trim() ||
+  "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+const tilesAttribution =
+  import.meta.env.VITE_MAP_TILES_ATTRIBUTION?.trim() ||
+  "© OpenStreetMap contributors";
+
+if (import.meta.env.PROD && !import.meta.env.VITE_MAP_TILES_URL) {
+  console.warn(
+    "[Sale Juntada] VITE_MAP_TILES_URL no está configurada: el mapa usa los tiles de OpenStreetMap, que no permiten este uso en producción.",
+  );
+}
+
 export function LocationPicker({ value, onChange }: LocationPickerProps) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
@@ -70,9 +91,9 @@ export function LocationPicker({ value, onChange }: LocationPickerProps) {
           sources: {
             openStreetMap: {
               type: "raster",
-              tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+              tiles: [tilesUrl],
               tileSize: 256,
-              attribution: "© OpenStreetMap contributors",
+              attribution: tilesAttribution,
             },
           },
           layers: [

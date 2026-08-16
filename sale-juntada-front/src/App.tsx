@@ -12,11 +12,13 @@ import { AnimatePresence, m } from "framer-motion";
 import { useLocation, useNavigate } from "react-router-dom";
 import { io, Socket } from "socket.io-client";
 import {
+  ApiError,
   Expense,
   ExpenseSettlement,
   Gathering,
   GatheringHistoryItem,
   gatheringService,
+  GatheringSlot,
   Match,
   PaymentDetails,
   SOCKET_URL,
@@ -297,59 +299,45 @@ function readParticipantSession(
   }
 }
 
-function buildGatheringSlots(gathering: Gathering): Slot[] {
-  const windowStart = new Date(gathering.windowStart);
-  const windowEnd = new Date(gathering.windowEnd);
-  const dailyStartMinutes = gathering.dailyStartMinutes ?? 780;
-  const dailyEndMinutes = gathering.dailyEndMinutes ?? 1440;
-  const slotStepMinutes = gathering.slotStepMinutes ?? 480;
-  const cursor = new Date(windowStart);
-  cursor.setHours(0, 0, 0, 0);
-  const result: Slot[] = [];
+/**
+ * Le pone etiquetas legibles a un horario que viene del backend.
+ *
+ * Se formatea siempre en la zona horaria de la juntada, no en la de quien
+ * mira: todo el grupo tiene que leer "Sáb 21:00" aunque alguien esté de viaje.
+ * Antes esta función además *generaba* los horarios con la hora local del
+ * navegador, y como el matching agrupa por instante exacto, dos personas en
+ * husos distintos no cruzaban en ninguna opción.
+ */
+function decorateSlot(slot: GatheringSlot, timeZone?: string): Slot {
+  const startsAt = new Date(slot.startsAt);
+  const zone = timeZone ? { timeZone } : {};
+  const capitalize = (value: string) =>
+    value.charAt(0).toUpperCase() + value.slice(1);
+  const day = new Intl.DateTimeFormat("es-AR", { weekday: "short", ...zone })
+    .format(startsAt)
+    .replace(".", "");
+  const date = new Intl.DateTimeFormat("es-AR", {
+    day: "numeric",
+    month: "short",
+    ...zone,
+  })
+    .format(startsAt)
+    .replace(".", "");
+  const time = new Intl.DateTimeFormat("es-AR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    ...zone,
+  }).format(startsAt);
 
-  for (let dayIndex = 0; dayIndex < 31 && cursor <= windowEnd; dayIndex += 1) {
-    for (
-      let startMinutes = dailyStartMinutes;
-      startMinutes + gathering.durationMinutes <= dailyEndMinutes;
-      startMinutes += slotStepMinutes
-    ) {
-      const startsAt = new Date(cursor);
-      startsAt.setMinutes(startMinutes);
-      const endsAt = new Date(
-        startsAt.getTime() + gathering.durationMinutes * 60_000,
-      );
-      if (startsAt < windowStart || endsAt > windowEnd) continue;
-
-      const day = new Intl.DateTimeFormat("es-AR", {
-        weekday: "short",
-      })
-        .format(startsAt)
-        .replace(".", "");
-      const date = new Intl.DateTimeFormat("es-AR", {
-        day: "numeric",
-        month: "short",
-      })
-        .format(startsAt)
-        .replace(".", "");
-      const time = new Intl.DateTimeFormat("es-AR", {
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false,
-      }).format(startsAt);
-
-      result.push({
-        id: startsAt.toISOString(),
-        day: day.charAt(0).toUpperCase() + day.slice(1),
-        date: date.charAt(0).toUpperCase() + date.slice(1),
-        time,
-        startsAt: startsAt.toISOString(),
-        endsAt: endsAt.toISOString(),
-      });
-    }
-    cursor.setDate(cursor.getDate() + 1);
-  }
-
-  return result;
+  return {
+    id: slot.id,
+    day: capitalize(day),
+    date: capitalize(date),
+    time,
+    startsAt: slot.startsAt,
+    endsAt: slot.endsAt,
+  };
 }
 
 export default function Home() {
@@ -388,6 +376,7 @@ export default function Home() {
   const [isSavingAvailability, setIsSavingAvailability] = useState(false);
   const [apiError, setApiError] = useState("");
   const [showJoin, setShowJoin] = useState(false);
+  const [duplicateNameWarning, setDuplicateNameWarning] = useState("");
   const [showAccount, setShowAccount] = useState(false);
   const [selectedAvatar, setSelectedAvatar] = useState("emoji:🦆");
   const [isPreparingAvatar, setIsPreparingAvatar] = useState(false);
@@ -421,7 +410,16 @@ export default function Home() {
   const [isLiveConnected, setIsLiveConnected] = useState(false);
   const [purchaseRevision, setPurchaseRevision] = useState(0);
   const socketRef = useRef<Socket | null>(null);
+  /** Última juntada conocida, para leer dentro de handlers del socket sin
+   * que ese valor dispare una reconexión (ver el efecto del socket, abajo). */
+  const activeGatheringRef = useRef(activeGathering);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveAvailabilityTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  /** Última selección que confirmó el servidor; es el punto al que se
+   * revierte si falla un guardado. */
+  const savedSlotsRef = useRef<string[]>([]);
   const availabilityGridRef = useRef<HTMLDivElement | null>(null);
   const activeSection = useActiveSection();
   const showNotice = useCallback((message: string) => {
@@ -527,10 +525,27 @@ export default function Home() {
     }
   };
 
-  const slots = useMemo(
-    () => (activeGathering ? buildGatheringSlots(activeGathering) : demoSlots),
-    [activeGathering],
+  /** Selección que viene del servidor: es el punto al que se revierte. */
+  const setAvailabilitySelection = (next: string[]) => {
+    setYourSlots(next);
+    savedSlotsRef.current = next;
+  };
+
+  useEffect(
+    () => () => {
+      if (saveAvailabilityTimeoutRef.current) {
+        clearTimeout(saveAvailabilityTimeoutRef.current);
+      }
+    },
+    [],
   );
+
+  const slots = useMemo(() => {
+    if (!activeGathering) return demoSlots;
+    return (activeGathering.slots ?? []).map((slot) =>
+      decorateSlot(slot, activeGathering.timeZone),
+    );
+  }, [activeGathering]);
   const slotGroups = useMemo(() => {
     const groups = new Map<
       string,
@@ -591,14 +606,14 @@ export default function Home() {
         );
         if (session && participant) {
           setParticipantSession(session);
-          setYourSlots(
+          setAvailabilitySelection(
             participant.availabilities
               ?.filter((availability) => availability.kind === "AVAILABLE")
               .map((availability) => availability.startsAt) ?? [],
           );
         } else {
           setParticipantSession(null);
-          setYourSlots([]);
+          setAvailabilitySelection([]);
           setShowJoin(true);
         }
       })
@@ -676,35 +691,47 @@ export default function Home() {
     sessionResponseToken,
   ]);
 
+  // El socket depende únicamente de identificadores estables, no del objeto
+  // `activeGathering` completo. Antes dependía de ese objeto, y como cada
+  // mutación (guardar disponibilidad, cargar un gasto, etc.) reemplaza esa
+  // referencia, la conexión se cerraba y se volvía a abrir en cada cambio: la
+  // presencia parpadeaba y los avisos en vuelo ("Sofi está cargando...") se
+  // perdían a mitad de camino. Los handlers leen la juntada actual a través
+  // de `activeGatheringRef`, que se mantiene al día sin disparar el efecto.
   useEffect(() => {
-    if (!activeGathering) return;
-    const participant = activeGathering.participants.find(
-      (candidate) => candidate.id === participantSession?.participantId,
-    );
+    activeGatheringRef.current = activeGathering;
+  }, [activeGathering]);
+
+  useEffect(() => {
+    if (!activeGatheringId) return;
+
+    const currentParticipant = () =>
+      activeGatheringRef.current?.participants.find(
+        (candidate) => candidate.id === sessionParticipantId,
+      );
 
     const socket = io(SOCKET_URL, { transports: ["websocket", "polling"] });
     socketRef.current = socket;
     const join = () => {
-      if (participant) {
+      if (sessionParticipantId && sessionResponseToken) {
         socket.emit("gathering:join", {
-          gatheringId: activeGathering.id,
-          participantId: participant.id,
-          participantToken: participantSession?.responseToken,
+          gatheringId: activeGatheringId,
+          participantId: sessionParticipantId,
+          participantToken: sessionResponseToken,
         });
       } else {
-        socket.emit("gathering:watch", {
-          gatheringId: activeGathering.id,
-        });
+        socket.emit("gathering:watch", { gatheringId: activeGatheringId });
       }
     };
     const refreshExpenses = async (payload?: { participantName?: string }) => {
+      const participant = currentParticipant();
       const [settlement, details] = await Promise.all([
-        gatheringService.getExpenseSettlement(activeGathering.id),
-        participant && participantSession?.responseToken
+        gatheringService.getExpenseSettlement(activeGatheringId),
+        participant && sessionResponseToken
           ? gatheringService.getPaymentDetails(
-              activeGathering.id,
+              activeGatheringId,
               participant.id,
-              participantSession.responseToken,
+              sessionResponseToken,
             )
           : Promise.resolve(null),
       ]);
@@ -756,7 +783,9 @@ export default function Home() {
     socket.on(
       "gathering:changed",
       async (payload?: { action?: "confirmed" | "updated" | "cancelled" }) => {
-        const refreshed = await gatheringService.getBySlug(activeGathering.slug);
+        const slug = activeGatheringRef.current?.slug;
+        if (!slug) return;
+        const refreshed = await gatheringService.getBySlug(slug);
         setActiveGathering(refreshed);
         setEventName(refreshed.title);
         setLocation(
@@ -777,9 +806,10 @@ export default function Home() {
     socket.on(
       "dietary:changed",
       async (payload?: { participantName?: string }) => {
-        const refreshed = await gatheringService.getBySlug(
-          activeGathering.slug,
-        );
+        const slug = activeGatheringRef.current?.slug;
+        if (!slug) return;
+        const participant = currentParticipant();
+        const refreshed = await gatheringService.getBySlug(slug);
         setActiveGathering(refreshed);
         if (
           payload?.participantName &&
@@ -801,6 +831,7 @@ export default function Home() {
         participantName: string;
       }) => {
         setPurchaseRevision((current) => current + 1);
+        const participant = currentParticipant();
         if (!activity || activity.participantId === participant?.id) return;
         const messages = {
           claim: `${activity.participantName} se hace cargo de ${activity.itemLabel}.`,
@@ -821,7 +852,7 @@ export default function Home() {
       setAnalyzingMembers([]);
       setIsLiveConnected(false);
     };
-  }, [activeGathering, participantSession, showNotice]);
+  }, [activeGatheringId, sessionParticipantId, sessionResponseToken, showNotice]);
 
   const rankedSlots = useMemo(() => {
     return slots
@@ -835,7 +866,75 @@ export default function Home() {
       .sort((a, b) => b.available - a.available);
   }, [slots, yourSlots]);
 
-  const toggleSlot = async (slotId: string) => {
+  /**
+   * Guarda la disponibilidad con debounce.
+   *
+   * Cada toque manda la lista completa y el backend borra y reinserta dentro
+   * de una transacción. Antes se disparaba una request por toque: en mobile,
+   * eligiendo varios horarios seguidos, las respuestas llegaban desordenadas
+   * y la última en escribir se comía las selecciones intermedias.
+   */
+  const persistAvailability = (nextSlots: string[]) => {
+    if (!activeGathering || !participantSession) return;
+    const gathering = activeGathering;
+    const session = participantSession;
+
+    if (saveAvailabilityTimeoutRef.current) {
+      clearTimeout(saveAvailabilityTimeoutRef.current);
+    }
+    setIsSavingAvailability(true);
+    saveAvailabilityTimeoutRef.current = setTimeout(async () => {
+      const payload = slots
+        .filter((slot) => nextSlots.includes(slot.id))
+        .map((slot) => ({
+          startsAt: slot.startsAt,
+          endsAt: slot.endsAt,
+          kind: "AVAILABLE" as const,
+        }));
+
+      setApiError("");
+      try {
+        await gatheringService.setAvailability(
+          gathering.id,
+          session.participantId,
+          session.responseToken,
+          payload,
+        );
+        setMatches(await gatheringService.getMatches(gathering.id));
+        setActiveGathering((current) => {
+          if (!current) return current;
+          return {
+            ...current,
+            participants: current.participants.map((participant) =>
+              participant.id === session.participantId
+                ? {
+                    ...participant,
+                    availabilities: payload.map((slot) => ({
+                      id: slot.startsAt,
+                      ...slot,
+                    })),
+                  }
+                : participant,
+            ),
+          };
+        });
+        savedSlotsRef.current = nextSlots;
+      } catch (error) {
+        // Se vuelve a lo último que el servidor confirmó, no a un estado
+        // intermedio de la ráfaga de toques.
+        setYourSlots(savedSlotsRef.current);
+        setApiError(
+          error instanceof Error
+            ? error.message
+            : "No pudimos guardar tu disponibilidad.",
+        );
+      } finally {
+        setIsSavingAvailability(false);
+      }
+    }, 600);
+  };
+
+  const toggleSlot = (slotId: string) => {
     if (activeGathering?.status === "CONFIRMED") {
       showNotice("La fecha ya está confirmada. El organizador puede editarla.");
       return;
@@ -854,55 +953,7 @@ export default function Home() {
       ? yourSlots.filter((id) => id !== slotId)
       : [...yourSlots, slotId];
     setYourSlots(nextSlots);
-
-    if (!activeGathering || !participantSession) return;
-    setIsSavingAvailability(true);
-    setApiError("");
-    try {
-      await gatheringService.setAvailability(
-        activeGathering.id,
-        participantSession.participantId,
-        participantSession.responseToken,
-        slots
-          .filter((slot) => nextSlots.includes(slot.id))
-          .map((slot) => ({
-            startsAt: slot.startsAt,
-            endsAt: slot.endsAt,
-            kind: "AVAILABLE" as const,
-          })),
-      );
-      setMatches(await gatheringService.getMatches(activeGathering.id));
-      setActiveGathering((current) => {
-        if (!current) return current;
-        return {
-          ...current,
-          participants: current.participants.map((participant) =>
-            participant.id === participantSession.participantId
-              ? {
-                  ...participant,
-                  availabilities: slots
-                    .filter((slot) => nextSlots.includes(slot.id))
-                    .map((slot) => ({
-                      id: slot.id,
-                      startsAt: slot.startsAt,
-                      endsAt: slot.endsAt,
-                      kind: "AVAILABLE" as const,
-                    })),
-                }
-              : participant,
-          ),
-        };
-      });
-    } catch (error) {
-      setYourSlots(yourSlots);
-      setApiError(
-        error instanceof Error
-          ? error.message
-          : "No pudimos guardar tu disponibilidad.",
-      );
-    } finally {
-      setIsSavingAvailability(false);
-    }
+    persistAvailability(nextSlots);
   };
 
   const shareEvent = async () => {
@@ -964,6 +1015,9 @@ export default function Home() {
           dailyStartMinutes: startMinutes,
           dailyEndMinutes: endMinutes,
           slotStepMinutes: 60,
+          // Los horarios se interpretan en la zona de quien organiza, así
+          // todo el grupo lee la misma hora de pared.
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         },
         accessToken,
       );
@@ -984,7 +1038,7 @@ export default function Home() {
           session.responseToken,
         );
         setParticipantSession(session);
-        setYourSlots([]);
+        setAvailabilitySelection([]);
       }
       setTemplateGatheringId(null);
       setShowCreate(false);
@@ -1005,6 +1059,9 @@ export default function Home() {
     if (!activeGathering) return;
     const form = new FormData(event.currentTarget);
     const name = String(form.get("participantName") || "").trim();
+    // Si ya hubo un choque de nombre y la persona confirmó que no es ella,
+    // insistimos con el mismo nombre en vez de volver a frenarla.
+    const allowDuplicateName = duplicateNameWarning === name;
 
     setIsSubmitting(true);
     setApiError("");
@@ -1013,6 +1070,7 @@ export default function Home() {
         activeGathering.id,
         name,
         selectedAvatar,
+        allowDuplicateName,
       );
       if (!participant.responseToken) {
         throw new Error("No pudimos crear tu acceso a la juntada.");
@@ -1031,11 +1089,18 @@ export default function Home() {
         ...activeGathering,
         participants: [...activeGathering.participants, participant],
       });
-      setYourSlots([]);
+      setAvailabilitySelection([]);
       setShowJoin(false);
+      setDuplicateNameWarning("");
       setNotice(`¡Listo, ${participant.name}! Marcá cuándo podés.`);
       window.setTimeout(() => setNotice(""), 2800);
     } catch (error) {
+      // El backend frena los nombres repetidos porque un duplicado cambia la
+      // división de gastos de todo el grupo. Le damos salida a las dos
+      // opciones: recuperar el acceso, o entrar igual siendo otra persona.
+      if (error instanceof ApiError && error.status === 400 && !allowDuplicateName) {
+        setDuplicateNameWarning(name);
+      }
       setApiError(
         error instanceof Error ? error.message : "No pudimos sumarte.",
       );
@@ -1260,7 +1325,7 @@ export default function Home() {
       setEventName(updated.title);
       setLocation(updated.locationHint ?? "Lugar a definir");
       setConfirmedSlot(updated.finalizedStart ?? null);
-      setYourSlots(
+      setAvailabilitySelection(
         updated.participants
           .find(
             (participant) =>
@@ -1922,7 +1987,6 @@ export default function Home() {
                           aria-label={`${slot.day} ${slot.date} · ${slot.time}`}
                           aria-pressed={selected}
                           disabled={
-                            isSavingAvailability ||
                             activeGathering?.status === "CONFIRMED" ||
                             activeGathering?.status === "CANCELLED"
                           }
@@ -3025,7 +3089,10 @@ export default function Home() {
 
       <AnimatedDialog
         open={showJoin && Boolean(activeGathering)}
-        onClose={() => setShowJoin(false)}
+        onClose={() => {
+          setShowJoin(false);
+          setDuplicateNameWarning("");
+        }}
         panelClassName="create-sheet"
         label={`Sumarse a ${activeGathering?.title ?? "la juntada"}`}
         as="form"
@@ -3036,7 +3103,10 @@ export default function Home() {
             <button
               type="button"
               className="close-button"
-              onClick={() => setShowJoin(false)}
+              onClick={() => {
+                setShowJoin(false);
+                setDuplicateNameWarning("");
+              }}
               aria-label="Cerrar"
             >
               ×
@@ -3110,7 +3180,17 @@ export default function Home() {
               </div>
               <small>La foto se recorta y comprime antes de guardarse.</small>
             </fieldset>
-            {apiError && (
+            {duplicateNameWarning && (
+              <div className="duplicate-warning" role="alert">
+                <strong>Ya hay alguien con ese nombre</strong>
+                <p>
+                  Si sos vos y perdiste el acceso, guardá tu sesión más abajo
+                  para recuperarlo. Si son dos personas distintas, tocá de
+                  nuevo “Entrar” y te sumamos igual.
+                </p>
+              </div>
+            )}
+            {apiError && !duplicateNameWarning && (
               <small className="form-error" role="alert">
                 {apiError}
               </small>
@@ -3120,7 +3200,11 @@ export default function Home() {
               type="submit"
               disabled={isSubmitting || isPreparingAvatar}
             >
-              {isSubmitting ? "Sumándote…" : "Entrar y marcar horarios"}{" "}
+              {isSubmitting
+                ? "Sumándote…"
+                : duplicateNameWarning
+                  ? "Entrar igual"
+                  : "Entrar y marcar horarios"}{" "}
               <span>→</span>
             </button>
             <div className="join-divider">

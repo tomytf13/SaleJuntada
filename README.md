@@ -141,6 +141,38 @@ Los secretos se mantienen en `sale-juntada-back/.env`, quedan fuera del reposito
 
 El alcance funcional, la estrategia de privacidad y los criterios de aceptación quedan detallados en [docs/google-calendar.md](docs/google-calendar.md).
 
+## ⏰ Zonas horarias
+
+Cada juntada guarda la zona horaria IANA en la que fue creada (`Gathering.timeZone`)
+y el backend genera los horarios candidatos en esa zona
+([slots.ts](sale-juntada-back/src/gatherings/slots.ts)). El frontend sólo los
+formatea para mostrarlos.
+
+Esto importa porque el matching agrupa las disponibilidades por instante exacto:
+si cada navegador generara los horarios con su hora local, dos participantes en
+husos distintos producirían instantes diferentes y no coincidirían en ninguna
+opción, sin ningún error visible. `setAvailability` también rechaza horarios que
+no pertenezcan a la grilla de la juntada.
+
+## 🔒 Notas de seguridad
+
+- El slug de cada juntada usa 8 bytes aleatorios: es la única barrera que
+  protege nombres, fotos, disponibilidad, gastos y la ubicación exacta del
+  encuentro, dado que unirse no requiere cuenta.
+- Cada juntada admite hasta 40 participantes. Como los gastos y la compra se
+  dividen por cabeza, sumar gente falsa cambia lo que paga y lo que le toca
+  llevar a cada uno.
+- `avatarUrl` (unirse o crear sin sesión) sólo acepta un emoji, una imagen
+  comprimida a data URI por el propio navegador, o una foto de perfil de
+  `*.googleusercontent.com` (para quien ya tiene sesión de Google al unirse).
+  Antes se aceptaba cualquier URL, y como se renderiza en un `<img src>`,
+  servía para cosechar la IP de cada persona que abriera el link. El flujo
+  autenticado con Supabase (`AuthParticipantDto`) no pasa por esta
+  restricción porque ahí la identidad ya está verificada por el JWT.
+- `VITE_MAP_TILES_URL` es obligatoria en producción: la Tile Usage Policy de
+  OpenStreetMap no permite usar `tile.openstreetmap.org` desde una
+  aplicación. MapTiler, Protomaps y Stadia Maps tienen plan gratuito.
+
 ## 🌐 Entornos
 
 - Frontend: [sale-juntada-front.vercel.app](https://sale-juntada-front.vercel.app)

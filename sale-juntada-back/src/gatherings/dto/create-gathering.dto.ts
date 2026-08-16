@@ -6,11 +6,13 @@ import {
   IsLongitude,
   IsOptional,
   IsString,
+  Matches,
   Max,
   MaxLength,
   Min,
   MinLength,
 } from "class-validator";
+import { AVATAR_MAX_LENGTH, AVATAR_PATTERN } from "./avatar";
 
 export class CreateGatheringDto {
   @ApiPropertyOptional({
@@ -33,7 +35,11 @@ export class CreateGatheringDto {
   @ApiPropertyOptional({ example: "emoji:🦆" })
   @IsOptional()
   @IsString()
-  @MaxLength(90000)
+  @MaxLength(AVATAR_MAX_LENGTH)
+  @Matches(AVATAR_PATTERN, {
+    message:
+      "El avatar debe ser un emoji, una imagen subida desde tu dispositivo, o tu foto de Google",
+  })
   organizerAvatarUrl?: string;
 
   @ApiPropertyOptional({ example: "Yerba Buena" })
@@ -89,4 +95,14 @@ export class CreateGatheringDto {
   @Min(30)
   @Max(720)
   slotStepMinutes?: number;
+
+  @ApiPropertyOptional({
+    example: "America/Argentina/Buenos_Aires",
+    description:
+      "Zona horaria IANA en la que se interpretan los horarios de la juntada",
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  timeZone?: string;
 }

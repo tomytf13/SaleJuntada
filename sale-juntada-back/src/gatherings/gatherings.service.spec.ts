@@ -1,5 +1,5 @@
 import { PrismaService } from "../prisma/prisma.service";
-import { GatheringsService } from "./gatherings.service";
+import { GatheringsService, MAX_PARTICIPANTS } from "./gatherings.service";
 
 describe("GatheringsService expense settlement", () => {
   it("divide en partes iguales y genera transferencias directas", async () => {
@@ -1001,5 +1001,160 @@ describe("GatheringsService expense corrections", () => {
       where: { gatheringId: "gathering" },
       data: { expensesReadyAt: null },
     });
+  });
+});
+
+describe("GatheringsService transfer confirmations", () => {
+  it("guarda cada confirmación contra su ronda de gastos", async () => {
+    const participants = [
+      {
+        id: "a",
+        name: "Ana",
+        createdAt: new Date(),
+        expensesReadyAt: new Date(),
+        availabilities: [],
+      },
+      {
+        id: "b",
+        name: "Beto",
+        createdAt: new Date(),
+        expensesReadyAt: new Date(),
+        availabilities: [],
+      },
+    ];
+    const upsert = jest.fn().mockResolvedValue({
+      fromParticipant: { id: "a", name: "Ana" },
+      toParticipant: { id: "b", name: "Beto" },
+    });
+    const prisma = {
+      participant: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValue({ id: "a", responseToken: "token-ana" }),
+      },
+      gathering: {
+        findUnique: jest.fn().mockResolvedValue({
+          participants,
+          expenses: [
+            {
+              id: "expense-b",
+              paidByParticipantId: "b",
+              amountCents: 12_000,
+              paidBy: { id: "b", name: "Beto" },
+            },
+          ],
+          // Segunda ronda: ya hubo un pago de 6.000 de Ana a Beto antes.
+          expenseRound: 2,
+          transferConfirmations: [],
+        }),
+      },
+      transferConfirmation: { upsert },
+    } as unknown as PrismaService;
+
+    await new GatheringsService(prisma).confirmTransfer(
+      "gathering",
+      "a",
+      "token-ana",
+      { toParticipantId: "b", amountCents: 6_000 },
+    );
+
+    // La clave incluye la ronda: un segundo pago del mismo monto entre las
+    // mismas dos personas ya no pisa al de la ronda anterior.
+    expect(upsert).toHaveBeenCalledTimes(1);
+    expect(upsert.mock.calls[0][0].where).toEqual({
+      roundPair: {
+        gatheringId: "gathering",
+        expenseRound: 2,
+        fromParticipantId: "a",
+        toParticipantId: "b",
+      },
+    });
+  });
+});
+
+describe("GatheringsService addParticipant", () => {
+  const gathering = {
+    id: "gathering",
+    status: "OPEN",
+  };
+
+  it("frena un nombre repetido para no alterar la división de gastos", async () => {
+    const create = jest.fn();
+    const prisma = {
+      gathering: { findUnique: jest.fn().mockResolvedValue(gathering) },
+      participant: {
+        findFirst: jest.fn().mockResolvedValue({ id: "existing" }),
+        create,
+      },
+    } as unknown as PrismaService;
+
+    await expect(
+      new GatheringsService(prisma).addParticipant("gathering", {
+        name: "Sofi",
+      }),
+    ).rejects.toThrow(/Ya hay alguien anotado/);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("compara nombres sin distinguir mayúsculas ni espacios de borde", async () => {
+    const findFirst = jest.fn().mockResolvedValue(null);
+    const prisma = {
+      gathering: { findUnique: jest.fn().mockResolvedValue(gathering) },
+      participant: {
+        findFirst,
+        count: jest.fn().mockResolvedValue(0),
+        create: jest.fn().mockResolvedValue({ id: "new", name: "sofi" }),
+      },
+    } as unknown as PrismaService;
+
+    await new GatheringsService(prisma).addParticipant("gathering", {
+      name: "  sofi  ",
+    });
+
+    expect(findFirst).toHaveBeenCalledWith({
+      where: {
+        gatheringId: "gathering",
+        name: { equals: "sofi", mode: "insensitive" },
+      },
+      select: { id: true },
+    });
+  });
+
+  it("deja entrar al duplicado si la persona ya confirmó que es otra", async () => {
+    const create = jest.fn().mockResolvedValue({ id: "new", name: "Sofi" });
+    const prisma = {
+      gathering: { findUnique: jest.fn().mockResolvedValue(gathering) },
+      participant: {
+        findFirst: jest.fn().mockResolvedValue({ id: "existing" }),
+        count: jest.fn().mockResolvedValue(0),
+        create,
+      },
+    } as unknown as PrismaService;
+
+    await new GatheringsService(prisma).addParticipant("gathering", {
+      name: "Sofi",
+      allowDuplicateName: true,
+    });
+
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it("no deja sumar más gente cuando la juntada llegó al tope", async () => {
+    const create = jest.fn();
+    const prisma = {
+      gathering: { findUnique: jest.fn().mockResolvedValue(gathering) },
+      participant: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        count: jest.fn().mockResolvedValue(MAX_PARTICIPANTS),
+        create,
+      },
+    } as unknown as PrismaService;
+
+    await expect(
+      new GatheringsService(prisma).addParticipant("gathering", {
+        name: "Alguien más",
+      }),
+    ).rejects.toThrow(/llegó al máximo/);
+    expect(create).not.toHaveBeenCalled();
   });
 });

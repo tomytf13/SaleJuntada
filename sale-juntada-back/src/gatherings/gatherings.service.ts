@@ -34,6 +34,18 @@ import {
   type PurchaseResponsibilityAction,
   UpdatePurchaseResponsibilityDto,
 } from "./dto/update-purchase-responsibility.dto";
+import { buildSlots, isValidTimeZone } from "./slots";
+
+/** Zona de las juntadas ya creadas y de las nuevas que no declaren otra. */
+export const DEFAULT_TIME_ZONE = "America/Argentina/Buenos_Aires";
+
+/**
+ * Tope de participantes por juntada. El link es público por diseño, así que
+ * sin un límite cualquiera puede inflar el grupo — y como los gastos y la
+ * compra se dividen por cabeza, sumar gente falsa cambia lo que paga y lo
+ * que le toca llevar a cada uno.
+ */
+export const MAX_PARTICIPANTS = 40;
 
 type PurchaseCatalogItem = {
   key: string;
@@ -182,16 +194,22 @@ export class GatheringsService {
   }
 
   async create(dto: CreateGatheringDto, identity: AuthIdentity | null = null) {
-    const slug = `${this.slugify(dto.title)}-${randomBytes(3).toString("hex")}`;
+    // 8 bytes en vez de 3: el slug es la única barrera que protege nombres,
+    // fotos, disponibilidad, gastos y la ubicación exacta del encuentro.
+    const slug = `${this.slugify(dto.title)}-${randomBytes(8).toString("hex")}`;
     const dailyStartMinutes = dto.dailyStartMinutes ?? 780;
     const dailyEndMinutes = dto.dailyEndMinutes ?? 1440;
     const durationMinutes = dto.durationMinutes ?? 180;
     const slotStepMinutes = dto.slotStepMinutes ?? 480;
+    const timeZone = dto.timeZone ?? DEFAULT_TIME_ZONE;
 
     if (dailyEndMinutes - dailyStartMinutes < durationMinutes) {
       throw new BadRequestException(
         "La franja horaria debe permitir al menos una opción completa",
       );
+    }
+    if (!isValidTimeZone(timeZone)) {
+      throw new BadRequestException("La zona horaria no es válida");
     }
 
     if (dto.templateGatheringId && !identity) {
@@ -255,6 +273,7 @@ export class GatheringsService {
           locationHint: dto.locationHint,
           locationLatitude: dto.locationLatitude,
           locationLongitude: dto.locationLongitude,
+          timeZone,
           windowStart: new Date(dto.windowStart),
           windowEnd: new Date(dto.windowEnd),
           durationMinutes,
@@ -323,7 +342,31 @@ export class GatheringsService {
     });
 
     if (!gathering) throw new NotFoundException("Juntada no encontrada");
-    return gathering;
+    // Los horarios candidatos viajan calculados en la zona de la juntada: son
+    // los mismos instantes para todo el grupo, sin importar desde dónde abran
+    // el link.
+    return { ...gathering, slots: this.slotsFor(gathering) };
+  }
+
+  /** Horarios que esta juntada ofrece, calculados en su propia zona horaria. */
+  private slotsFor(gathering: {
+    windowStart: Date;
+    windowEnd: Date;
+    timeZone: string;
+    durationMinutes: number;
+    dailyStartMinutes: number;
+    dailyEndMinutes: number;
+    slotStepMinutes: number;
+  }) {
+    return buildSlots({
+      windowStart: gathering.windowStart,
+      windowEnd: gathering.windowEnd,
+      timeZone: gathering.timeZone,
+      durationMinutes: gathering.durationMinutes,
+      dailyStartMinutes: gathering.dailyStartMinutes,
+      dailyEndMinutes: gathering.dailyEndMinutes,
+      slotStepMinutes: gathering.slotStepMinutes,
+    });
   }
 
   async finalizeGathering(
@@ -475,10 +518,30 @@ export class GatheringsService {
 
   async addParticipant(gatheringId: string, dto: AddParticipantDto) {
     await this.ensureGathering(gatheringId);
+    const name = dto.name.trim();
+
+    // Quien borra los datos del navegador (o abre el link en otro
+    // dispositivo) no queda reconocido y la app le ofrece sumarse de nuevo.
+    // Como los gastos se dividen por cabeza, ese duplicado le cambia la
+    // cuenta a todo el grupo: se frena y se le pregunta si es la misma
+    // persona, salvo que ya haya confirmado que son dos personas distintas.
+    if (!dto.allowDuplicateName) {
+      const existing = await this.prisma.participant.findFirst({
+        where: { gatheringId, name: { equals: name, mode: "insensitive" } },
+        select: { id: true },
+      });
+      if (existing) {
+        throw new BadRequestException(
+          `Ya hay alguien anotado como “${name}” en esta juntada. Si sos vos, recuperá tu acceso; si no, entrá con otro nombre.`,
+        );
+      }
+    }
+    await this.ensureParticipantCapacity(gatheringId);
+
     return this.prisma.participant.create({
       data: {
         gatheringId,
-        name: dto.name,
+        name,
         contact: dto.contact,
         avatarUrl: dto.avatarUrl,
       },
@@ -524,6 +587,7 @@ export class GatheringsService {
       },
     });
     if (existing) return existing;
+    await this.ensureParticipantCapacity(gatheringId);
 
     return this.prisma.participant.create({
       data: {
@@ -563,15 +627,23 @@ export class GatheringsService {
       endsAt: new Date(slot.endsAt),
       kind: slot.kind,
     }));
+    // Se aceptan únicamente los horarios que la juntada realmente ofrece. El
+    // matching agrupa por instante exacto, así que un horario que no esté en la
+    // grilla quedaría aislado para siempre en vez de cruzar con el del resto.
+    const offered = new Set(
+      this.slotsFor(participant.gathering).map(
+        (slot) => `${slot.startsAt}_${slot.endsAt}`,
+      ),
+    );
     const invalidSlot = slots.some(
       (slot) =>
-        slot.startsAt >= slot.endsAt ||
-        slot.startsAt < participant.gathering.windowStart ||
-        slot.endsAt > participant.gathering.windowEnd,
+        !offered.has(
+          `${slot.startsAt.toISOString()}_${slot.endsAt.toISOString()}`,
+        ),
     );
     if (invalidSlot) {
       throw new BadRequestException(
-        "Los horarios deben estar dentro del rango de la juntada",
+        "Alguno de los horarios ya no corresponde a esta juntada. Actualizá la página.",
       );
     }
 
@@ -1653,22 +1725,26 @@ export class GatheringsService {
       );
     }
 
+    // La confirmación se guarda contra la ronda de gastos vigente. Antes la
+    // clave incluía el monto, así que un segundo pago por el mismo importe
+    // entre las mismas dos personas pisaba al primero y la plata se perdía.
     return this.prisma.transferConfirmation.upsert({
       where: {
-        gatheringId_fromParticipantId_toParticipantId_amountCents: {
+        roundPair: {
           gatheringId,
+          expenseRound: settlement.expenseRound,
           fromParticipantId: participantId,
           toParticipantId: dto.toParticipantId,
-          amountCents: dto.amountCents,
         },
       },
       create: {
         gatheringId,
+        expenseRound: settlement.expenseRound,
         fromParticipantId: participantId,
         toParticipantId: dto.toParticipantId,
         amountCents: dto.amountCents,
       },
-      update: { confirmedAt: new Date() },
+      update: { amountCents: dto.amountCents, confirmedAt: new Date() },
       include: {
         fromParticipant: { select: { id: true, name: true } },
         toParticipant: { select: { id: true, name: true } },
@@ -1748,6 +1824,17 @@ export class GatheringsService {
     if (!gathering) throw new NotFoundException("Juntada no encontrada");
     if (gathering.status === GatheringStatus.CANCELLED) {
       throw new ConflictException("La juntada está cancelada");
+    }
+  }
+
+  private async ensureParticipantCapacity(gatheringId: string) {
+    const count = await this.prisma.participant.count({
+      where: { gatheringId },
+    });
+    if (count >= MAX_PARTICIPANTS) {
+      throw new BadRequestException(
+        `Esta juntada ya llegó al máximo de ${MAX_PARTICIPANTS} participantes`,
+      );
     }
   }
 
@@ -1842,6 +1929,13 @@ export class GatheringsService {
     dto: AuthParticipantDto,
   ) {
     await this.ensureGathering(gatheringId);
+    const existing = await this.prisma.participant.findUnique({
+      where: { gatheringId_authUserId: { gatheringId, authUserId: identity.id } },
+      select: { id: true },
+    });
+    // Sólo se cuenta contra el tope si esto va a crear una fila nueva: quien
+    // ya es parte de la juntada tiene que poder volver a entrar siempre.
+    if (!existing) await this.ensureParticipantCapacity(gatheringId);
     const paymentProfile = await this.prisma.userPaymentProfile.findUnique({
       where: { authUserId: identity.id },
       select: { paymentAlias: true },

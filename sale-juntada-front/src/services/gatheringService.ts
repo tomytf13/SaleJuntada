@@ -16,6 +16,18 @@ export type CreateGatheringInput = {
   dailyStartMinutes?: number;
   dailyEndMinutes?: number;
   slotStepMinutes?: number;
+  timeZone?: string;
+};
+
+/**
+ * Horario candidato. Lo calcula el backend en la zona horaria de la juntada,
+ * así todo el grupo recibe los mismos instantes sin importar desde qué huso
+ * abra el link.
+ */
+export type GatheringSlot = {
+  id: string;
+  startsAt: string;
+  endsAt: string;
 };
 
 export type Gathering = {
@@ -32,6 +44,8 @@ export type Gathering = {
   dailyStartMinutes?: number;
   dailyEndMinutes?: number;
   slotStepMinutes?: number;
+  timeZone?: string;
+  slots?: GatheringSlot[];
   status: "DRAFT" | "OPEN" | "PROPOSED" | "CONFIRMED" | "CANCELLED";
   finalizedStart?: string | null;
   finalizedEnd?: string | null;
@@ -254,6 +268,17 @@ export type PurchasePlan = {
   items: PurchaseItem[];
 };
 
+/** Error de la API que conserva el status HTTP para distinguir casos puntuales. */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const controller = new AbortController();
   const abortFromCaller = () => controller.abort();
@@ -286,8 +311,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const detail = Array.isArray(body?.message)
       ? body.message.join(". ")
       : body?.message;
-    throw new Error(
+    throw new ApiError(
       detail ?? "No pudimos comunicarnos con Sale Juntada. Probá nuevamente.",
+      response.status,
     );
   }
 
@@ -330,10 +356,15 @@ export const gatheringService = {
     return request<Gathering>(`/gatherings/${slug}`);
   },
 
-  addParticipant(gatheringId: string, name: string, avatarUrl?: string) {
+  addParticipant(
+    gatheringId: string,
+    name: string,
+    avatarUrl?: string,
+    allowDuplicateName?: boolean,
+  ) {
     return request<Participant>(`/gatherings/${gatheringId}/participants`, {
       method: "POST",
-      body: JSON.stringify({ name, avatarUrl }),
+      body: JSON.stringify({ name, avatarUrl, allowDuplicateName }),
     });
   },
 

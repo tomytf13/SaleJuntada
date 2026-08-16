@@ -44,6 +44,7 @@ model Gathering {
   locationLatitude      Float?
   locationLongitude     Float?
   organizerName         String
+  timeZone              String                 @default("America/Argentina/Buenos_Aires")
   windowStart           DateTime
   windowEnd             DateTime
   durationMinutes       Int                    @default(180)
@@ -143,9 +144,10 @@ model TransferConfirmation {
   toParticipantId   String
   toParticipant     Participant @relation("TransferTo", fields: [toParticipantId], references: [id], onDelete: Cascade)
   amountCents       Int
+  expenseRound      Int         @default(1)
   confirmedAt       DateTime    @default(now())
 
-  @@unique([gatheringId, fromParticipantId, toParticipantId, amountCents])
+  @@unique([gatheringId, expenseRound, fromParticipantId, toParticipantId], name: "roundPair", map: "TransferConfirmation_round_pair_key")
   @@index([gatheringId])
   @@index([fromParticipantId])
   @@index([toParticipantId])

@@ -2444,6 +2444,27 @@ footer > span {
   font-weight: 800;
 }
 
+.duplicate-warning {
+  margin-top: 14px;
+  padding: 13px 15px;
+  border: 1px solid #d8b45e;
+  border-radius: 13px;
+  background: #fbf4e2;
+}
+
+.duplicate-warning strong {
+  display: block;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
+.duplicate-warning p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #6b5a2c;
+}
+
 .primary-button:disabled {
   cursor: wait;
   opacity: 0.65;

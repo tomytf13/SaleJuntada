@@ -14,6 +14,36 @@ const emptySettlement = {
   completedTransfers: [],
 };
 
+/**
+ * Los horarios candidatos ahora los calcula el backend en la zona de la
+ * juntada y llegan en la respuesta, así que las respuestas simuladas tienen
+ * que traerlos igual que la API real.
+ */
+function slotsFor(days: string[], hours: number[]) {
+  return days.flatMap((day) =>
+    hours.map((hour) => {
+      const startsAt = new Date(
+        `${day}T${String(hour).padStart(2, "0")}:00:00-03:00`,
+      );
+      const endsAt = new Date(startsAt.getTime() + 3 * 60 * 60_000);
+      return {
+        id: startsAt.toISOString(),
+        startsAt: startsAt.toISOString(),
+        endsAt: endsAt.toISOString(),
+      };
+    }),
+  );
+}
+
+/** Ventana compartida por las juntadas simuladas: 13:00 y 21:00 de cada día. */
+const gatheringSchedule = {
+  timeZone: "America/Argentina/Buenos_Aires",
+  windowStart: "2026-07-25T03:00:00.000Z",
+  windowEnd: "2026-07-28T02:59:59.000Z",
+  durationMinutes: 180,
+  slots: slotsFor(["2026-07-25", "2026-07-26", "2026-07-27"], [13, 21]),
+};
+
 test("abre una juntada sembrada desde PostgreSQL real", async ({ page, request }) => {
   test.skip(
     process.env.E2E_REAL_DB !== "1",
@@ -67,9 +97,7 @@ test("crea una juntada y abre su enlace compartible", async ({ page }) => {
     title: "Asado del viernes",
     organizerName: "Tomás",
     locationHint: "Yerba Buena",
-    windowStart: "2026-07-25T03:00:00.000Z",
-    windowEnd: "2026-07-28T02:59:59.000Z",
-    durationMinutes: 180,
+    ...gatheringSchedule,
     participants: [
       {
         id: "participant-1",
@@ -122,9 +150,7 @@ test("un invitado entra sin registro y guarda su disponibilidad", async ({
     title: "Birras en el centro",
     organizerName: "Tomás",
     locationHint: "Centro",
-    windowStart: "2026-07-25T03:00:00.000Z",
-    windowEnd: "2026-07-28T02:59:59.000Z",
-    durationMinutes: 180,
+    ...gatheringSchedule,
     participants: [
       {
         id: "organizer-2",
@@ -204,9 +230,7 @@ test("carga un gasto y calcula quién transfiere a quién", async ({ page }) => 
     title: "Pizza del sábado",
     organizerName: "Tomás",
     locationHint: "Centro",
-    windowStart: "2026-07-25T03:00:00.000Z",
-    windowEnd: "2026-07-28T02:59:59.000Z",
-    durationMinutes: 180,
+    ...gatheringSchedule,
     participants: [
       {
         id: "organizer-3",
@@ -367,9 +391,7 @@ test("el grupo elige responsables y el organizador edita la compra", async ({
     title: "Asado con compra",
     organizerName: "Tomás",
     locationHint: "Yerba Buena",
-    windowStart: "2026-07-25T03:00:00.000Z",
-    windowEnd: "2026-07-28T02:59:59.000Z",
-    durationMinutes: 180,
+    ...gatheringSchedule,
     dailyStartMinutes: 780,
     dailyEndMinutes: 1440,
     slotStepMinutes: 480,
