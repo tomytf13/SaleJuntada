@@ -304,6 +304,13 @@ export const gatheringService = {
     });
   },
 
+  deleteMyGathering(gatheringId: string, accessToken: string) {
+    return request<{ id: string }>(`/users/me/gatherings/${gatheringId}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+  },
+
   getBySlug(slug: string) {
     return request<Gathering>(`/gatherings/${slug}`);
   },

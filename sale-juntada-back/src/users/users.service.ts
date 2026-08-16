@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { ForbiddenException, Injectable } from "@nestjs/common";
 import type { AuthIdentity } from "../auth/supabase-auth.service";
 import { PrismaService } from "../prisma/prisma.service";
 
@@ -43,5 +43,27 @@ export class UsersService {
         participant,
       };
     });
+  }
+
+  async deleteGathering(gatheringId: string, identity: AuthIdentity) {
+    const result = await this.prisma.gathering.deleteMany({
+      where: {
+        id: gatheringId,
+        participants: {
+          some: {
+            authUserId: identity.id,
+            isOrganizer: true,
+          },
+        },
+      },
+    });
+
+    if (result.count === 0) {
+      throw new ForbiddenException(
+        "No podés eliminar una juntada que no organizaste.",
+      );
+    }
+
+    return { id: gatheringId };
   }
 }

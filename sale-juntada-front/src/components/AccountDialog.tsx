@@ -40,6 +40,9 @@ export function AccountDialog({
   const [error, setError] = useState("");
   const [history, setHistory] = useState<GatheringHistoryItem[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [deletingGatheringId, setDeletingGatheringId] = useState<string | null>(
+    null,
+  );
 
   useEffect(() => {
     if (!open || !accessToken) return;
@@ -95,6 +98,29 @@ export function AccountDialog({
       await signInWithEmail(normalizedEmail);
       setEmailSent(true);
     });
+  };
+
+  const deleteGathering = async (gathering: GatheringHistoryItem) => {
+    if (!accessToken || deletingGatheringId) return;
+    const confirmed = window.confirm(
+      `¿Eliminar "${gathering.title}"? Esta acción es permanente y también borra sus participantes, horarios, compras y gastos.`,
+    );
+    if (!confirmed) return;
+
+    setDeletingGatheringId(gathering.id);
+    setError("");
+    try {
+      await gatheringService.deleteMyGathering(gathering.id, accessToken);
+      setHistory((items) => items.filter((item) => item.id !== gathering.id));
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "No pudimos eliminar la juntada. Probá nuevamente.",
+      );
+    } finally {
+      setDeletingGatheringId(null);
+    }
   };
 
   const metadata = user?.user_metadata ?? {};
@@ -178,13 +204,26 @@ export function AccountDialog({
                         </small>
                       </button>
                       {gathering.participant.isOrganizer ? (
-                        <button
-                          className="account-duplicate-button"
-                          type="button"
-                          onClick={() => onDuplicateGathering?.(gathering)}
-                        >
-                          Duplicar
-                        </button>
+                        <div className="account-history-actions">
+                          <button
+                            className="account-duplicate-button"
+                            type="button"
+                            disabled={deletingGatheringId === gathering.id}
+                            onClick={() => onDuplicateGathering?.(gathering)}
+                          >
+                            Duplicar
+                          </button>
+                          <button
+                            className="account-delete-button"
+                            type="button"
+                            disabled={deletingGatheringId !== null}
+                            onClick={() => void deleteGathering(gathering)}
+                          >
+                            {deletingGatheringId === gathering.id
+                              ? "Eliminando…"
+                              : "Eliminar"}
+                          </button>
+                        </div>
                       ) : null}
                     </article>
                   );

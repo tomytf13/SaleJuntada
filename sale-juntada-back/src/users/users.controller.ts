@@ -1,4 +1,4 @@
-import { Controller, Get, Headers } from "@nestjs/common";
+import { Controller, Delete, Get, Headers, Param } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { SupabaseAuthService } from "../auth/supabase-auth.service";
 import { UsersService } from "./users.service";
@@ -17,5 +17,14 @@ export class UsersController {
   ) {
     const identity = await this.authService.requireIdentity(authorization);
     return this.usersService.getGatheringHistory(identity);
+  }
+
+  @Delete("me/gatherings/:gatheringId")
+  async deleteMyGathering(
+    @Param("gatheringId") gatheringId: string,
+    @Headers("authorization") authorization: string | undefined,
+  ) {
+    const identity = await this.authService.requireIdentity(authorization);
+    return this.usersService.deleteGathering(gatheringId, identity);
   }
 }

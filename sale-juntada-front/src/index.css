@@ -1992,9 +1992,35 @@ footer > span {
   cursor: pointer;
 }
 
+.account-history-actions {
+  display: grid;
+  gap: 6px;
+}
+
+.account-delete-button {
+  padding: 8px 12px;
+  border: 1px solid rgba(160, 55, 35, 0.28);
+  border-radius: 10px;
+  background: #fff7f3;
+  color: #973923;
+  font-size: 10px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.account-duplicate-button:disabled,
+.account-delete-button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
 .account-history-main:hover,
-.account-duplicate-button:hover {
+.account-duplicate-button:hover:not(:disabled) {
   background: #f0f4dc;
+}
+
+.account-delete-button:hover:not(:disabled) {
+  background: #ffe9df;
 }
 
 .account-success {

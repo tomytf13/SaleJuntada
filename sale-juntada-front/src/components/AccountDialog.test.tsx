@@ -22,6 +22,7 @@ const auth = vi.hoisted(() => ({
 
 const services = vi.hoisted(() => ({
   getMyGatherings: vi.fn(),
+  deleteMyGathering: vi.fn(),
 }));
 
 vi.mock("../auth/useAuth", () => ({ useAuth: () => auth.value }));
@@ -44,12 +45,16 @@ beforeEach(() => {
   auth.value.user = null;
   auth.value.accessToken = null;
   services.getMyGatherings.mockReset().mockResolvedValue([]);
+  services.deleteMyGathering.mockReset().mockResolvedValue({ id: "gathering-1" });
   auth.value.signInWithGoogle.mockReset().mockResolvedValue(undefined);
   auth.value.signInWithEmail.mockReset().mockResolvedValue(undefined);
   auth.value.signOut.mockReset().mockResolvedValue(undefined);
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 describe("AccountDialog", () => {
   it("inicia el OAuth real de Google", async () => {
@@ -123,5 +128,46 @@ describe("AccountDialog", () => {
     expect(await screen.findByText("Asado del sábado")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Duplicar" }));
     expect(onDuplicateGathering).toHaveBeenCalledWith(gathering);
+  });
+
+  it("confirma y elimina una juntada propia del historial", async () => {
+    auth.value.user = {
+      email: "tomy@example.com",
+      user_metadata: { full_name: "Tomy Figueroa" },
+    };
+    auth.value.accessToken = "valid-token";
+    services.getMyGatherings.mockResolvedValue([
+      {
+        id: "gathering-1",
+        slug: "asado-1",
+        title: "Asado del sábado",
+        status: "OPEN",
+        organizerName: "Tomy",
+        windowStart: "2026-09-05T22:00:00.000Z",
+        windowEnd: "2026-09-06T02:00:00.000Z",
+        createdAt: "2026-08-15T00:00:00.000Z",
+        updatedAt: "2026-08-15T00:00:00.000Z",
+        participantCount: 6,
+        participant: {
+          id: "participant-1",
+          name: "Tomy",
+          responseToken: "response-token",
+          isOrganizer: true,
+        },
+      },
+    ]);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    renderDialog();
+    expect(await screen.findByText("Asado del sábado")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Eliminar" }));
+
+    await waitFor(() => {
+      expect(services.deleteMyGathering).toHaveBeenCalledWith(
+        "gathering-1",
+        "valid-token",
+      );
+    });
+    expect(screen.queryByText("Asado del sábado")).not.toBeInTheDocument();
   });
 });
