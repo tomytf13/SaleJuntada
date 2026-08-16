@@ -766,16 +766,26 @@ button {
   font-size: 17px;
 }
 
+.card-title-row > div {
+  min-width: 0;
+}
+
 .card-title-row p {
   font-size: 12px;
 }
 
 .selection-count {
+  flex: none;
   padding: 7px 10px;
   border-radius: 999px;
   background: var(--cream);
   font-size: 10px;
   font-weight: 900;
+  white-space: nowrap;
+}
+
+.slot-carousel-toolbar {
+  display: none;
 }
 
 .slot-grid {
@@ -2689,18 +2699,72 @@ footer > span {
     padding: 18px;
   }
 
+  .availability-card {
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .availability-card .card-title-row {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .slot-carousel-toolbar {
+    margin-top: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    color: var(--ink-soft);
+    font-size: 10px;
+    font-weight: 800;
+  }
+
+  .slot-carousel-toolbar > div {
+    display: flex;
+    gap: 6px;
+  }
+
+  .slot-carousel-toolbar button {
+    width: 34px;
+    height: 34px;
+    border: 1px solid #d4dacf;
+    border-radius: 10px;
+    background: var(--cream);
+    color: var(--ink);
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: 900;
+  }
+
+  .slot-carousel-toolbar button:active {
+    transform: scale(0.95);
+  }
+
   .slot-grid {
     grid-template-columns: none;
     grid-auto-flow: column;
-    grid-auto-columns: 140px;
-    margin-right: -18px;
-    padding-right: 18px;
+    grid-auto-columns: min(82vw, 270px);
+    margin: 10px 0 20px;
+    padding: 0 4px 12px 0;
     overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-color: #b8cc43 var(--cream);
+    scrollbar-width: thin;
+    scroll-padding-inline: 0 18px;
     scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .slot-grid:focus-visible {
+    outline: 2px solid #b8cc43;
+    outline-offset: 3px;
   }
 
   .day-slot-group {
     scroll-snap-align: start;
+    scroll-snap-stop: always;
   }
 
   .find-button {

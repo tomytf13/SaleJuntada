@@ -412,11 +412,20 @@ export default function Home() {
   const [purchaseRevision, setPurchaseRevision] = useState(0);
   const socketRef = useRef<Socket | null>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const availabilityGridRef = useRef<HTMLDivElement | null>(null);
   const activeSection = useActiveSection();
   const showNotice = useCallback((message: string) => {
     setNotice(message);
     window.setTimeout(() => setNotice(""), 2800);
   }, []);
+
+  const scrollAvailabilityDays = (direction: -1 | 1) => {
+    const grid = availabilityGridRef.current;
+    if (!grid) return;
+    const day = grid.querySelector<HTMLElement>(".day-slot-group");
+    const distance = day ? day.offsetWidth + 9 : grid.clientWidth;
+    grid.scrollBy({ left: direction * distance, behavior: "smooth" });
+  };
   const authName = String(
     user?.user_metadata.full_name ??
       user?.user_metadata.name ??
@@ -1631,10 +1640,35 @@ export default function Home() {
               </AnimatePresence>
             </div>
 
+            <div className="slot-carousel-toolbar">
+              <span>Deslizá para ver todos los días</span>
+              <div>
+                <button
+                  type="button"
+                  aria-label="Ver día anterior"
+                  aria-controls="availability-days"
+                  onClick={() => scrollAvailabilityDays(-1)}
+                >
+                  ←
+                </button>
+                <button
+                  type="button"
+                  aria-label="Ver día siguiente"
+                  aria-controls="availability-days"
+                  onClick={() => scrollAvailabilityDays(1)}
+                >
+                  →
+                </button>
+              </div>
+            </div>
+
             <div
+              id="availability-days"
               className="slot-grid"
+              ref={availabilityGridRef}
               role="group"
               aria-label="Elegí tus horarios disponibles"
+              tabIndex={0}
             >
               {slotGroups.map((group) => (
                 <section
