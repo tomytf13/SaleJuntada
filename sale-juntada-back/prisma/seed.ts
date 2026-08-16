@@ -26,10 +26,10 @@ async function main() {
       locationLatitude: -26.8083,
       locationLongitude: -65.2176,
       windowStart: atLocalTime(2, 19),
-      windowEnd: atLocalTime(4, 23),
+      windowEnd: atLocalTime(5, 0),
       durationMinutes: 180,
       dailyStartMinutes: 19 * 60,
-      dailyEndMinutes: 23 * 60,
+      dailyEndMinutes: 24 * 60,
       slotStepMinutes: 60,
     },
   });

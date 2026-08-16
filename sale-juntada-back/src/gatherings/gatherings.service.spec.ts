@@ -645,6 +645,7 @@ describe("GatheringsService authenticated history", () => {
     const transaction = {
       gathering: { create: jest.fn().mockResolvedValue(created) },
       purchasePlan: { create: jest.fn() },
+      userPaymentProfile: { findUnique: jest.fn().mockResolvedValue(null) },
     };
     const prisma = {
       $transaction: jest.fn((callback) => callback(transaction)),
@@ -694,6 +695,7 @@ describe("GatheringsService authenticated history", () => {
         create: jest.fn().mockResolvedValue(created),
       },
       purchasePlan: { create: jest.fn().mockResolvedValue({}) },
+      userPaymentProfile: { findUnique: jest.fn().mockResolvedValue(null) },
     };
     const prisma = {
       $transaction: jest.fn((callback) => callback(transaction)),
@@ -723,6 +725,116 @@ describe("GatheringsService authenticated history", () => {
           create: [expect.objectContaining({ key: "soda", quantity: 4 })],
         },
       }),
+    });
+  });
+});
+
+describe("GatheringsService payment aliases", () => {
+  it("normaliza y sincroniza el alias de un usuario autenticado", async () => {
+    const transaction = {
+      userPaymentProfile: {
+        upsert: jest.fn().mockResolvedValue({}),
+      },
+      participant: {
+        updateMany: jest.fn().mockResolvedValue({ count: 2 }),
+        update: jest.fn(),
+      },
+    };
+    const prisma = {
+      participant: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: "participant",
+          name: "Tomy",
+          authUserId: "auth-user",
+          responseToken: "token",
+        }),
+      },
+      $transaction: jest.fn((callback) => callback(transaction)),
+    } as unknown as PrismaService;
+
+    const result = await new GatheringsService(prisma).updatePaymentAlias(
+      "gathering",
+      "participant",
+      "token",
+      { paymentAlias: "  MATE.Asado-26  " },
+      { id: "auth-user", email: "tomy@example.com" },
+    );
+
+    expect(result.paymentAlias).toBe("mate.asado-26");
+    expect(transaction.userPaymentProfile.upsert).toHaveBeenCalledWith({
+      where: { authUserId: "auth-user" },
+      create: { authUserId: "auth-user", paymentAlias: "mate.asado-26" },
+      update: { paymentAlias: "mate.asado-26" },
+    });
+    expect(transaction.participant.updateMany).toHaveBeenCalledWith({
+      where: { authUserId: "auth-user" },
+      data: { paymentAlias: "mate.asado-26" },
+    });
+  });
+
+  it("sólo entrega el alias del destinatario al participante que debe pagarle", async () => {
+    const participants = [
+      {
+        id: "payer",
+        name: "Ana",
+        createdAt: new Date("2026-08-01"),
+        expensesReadyAt: new Date(),
+      },
+      {
+        id: "recipient",
+        name: "Beto",
+        createdAt: new Date("2026-08-02"),
+        expensesReadyAt: new Date(),
+      },
+    ];
+    const prisma = {
+      participant: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: "payer",
+          paymentAlias: null,
+          responseToken: "token",
+        }),
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: "recipient",
+            name: "Beto",
+            paymentAlias: "beto.asado",
+          },
+        ]),
+      },
+      gathering: {
+        findUnique: jest.fn().mockResolvedValue({
+          participants,
+          expenses: [
+            {
+              id: "expense",
+              paidByParticipantId: "recipient",
+              amountCents: 10_000,
+              paidBy: { id: "recipient", name: "Beto" },
+            },
+          ],
+          expenseRound: 1,
+          transferConfirmations: [],
+        }),
+      },
+    } as unknown as PrismaService;
+
+    const result = await new GatheringsService(prisma).getPaymentDetails(
+      "gathering",
+      "payer",
+      "token",
+    );
+
+    expect(result.recipients).toEqual([
+      {
+        participantId: "recipient",
+        name: "Beto",
+        paymentAlias: "beto.asado",
+      },
+    ]);
+    expect(prisma.participant.findMany).toHaveBeenCalledWith({
+      where: { gatheringId: "gathering", id: { in: ["recipient"] } },
+      select: { id: true, name: true, paymentAlias: true },
     });
   });
 });

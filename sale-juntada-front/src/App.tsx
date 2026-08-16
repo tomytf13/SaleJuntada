@@ -17,6 +17,7 @@ import {
   GatheringHistoryItem,
   gatheringService,
   Match,
+  PaymentDetails,
   SOCKET_URL,
 } from "./services/gatheringService";
 import type { SelectedLocation } from "./components/LocationPicker";
@@ -29,8 +30,11 @@ import { AnimatedDialog } from "./components/AnimatedDialog";
 import { AnimatedToast } from "./components/AnimatedToast";
 import { AccountDialog } from "./components/AccountDialog";
 import { PartyGames } from "./components/PartyGames";
+import { PaymentAliasEditor } from "./components/PaymentAliasEditor";
+import { PwaStatus } from "./components/PwaStatus";
 import { useAuth } from "./auth/useAuth";
 import { useActiveSection } from "./hooks/useActiveSection";
+import { formatAvailabilitySummary } from "./utils/availability";
 import {
   listItemVariants,
   listVariants,
@@ -389,6 +393,10 @@ export default function Home() {
     useState<ParticipantSession | null>(null);
   const [expenseSettlement, setExpenseSettlement] =
     useState<ExpenseSettlement | null>(null);
+  const [paymentDetails, setPaymentDetails] = useState<PaymentDetails | null>(
+    null,
+  );
+  const [isSavingPaymentAlias, setIsSavingPaymentAlias] = useState(false);
   const [isSavingExpense, setIsSavingExpense] = useState(false);
   const [expenseAmount, setExpenseAmount] = useState("");
   const [isMarkingExpensesReady, setIsMarkingExpensesReady] = useState(false);
@@ -539,6 +547,7 @@ export default function Home() {
       .then((gathering) => {
         if (cancelled) return;
         setActiveGathering(gathering);
+        setPaymentDetails(null);
         setEventName(gathering.title);
         setLocation(gathering.locationHint ?? "Lugar a definir");
         gatheringService
@@ -622,6 +631,33 @@ export default function Home() {
   ]);
 
   useEffect(() => {
+    if (!activeGatheringId || !sessionParticipantId || !sessionResponseToken) {
+      return;
+    }
+    let cancelled = false;
+    void gatheringService
+      .getPaymentDetails(
+        activeGatheringId,
+        sessionParticipantId,
+        sessionResponseToken,
+      )
+      .then((details) => {
+        if (!cancelled) setPaymentDetails(details);
+      })
+      .catch(() => {
+        if (!cancelled) setPaymentDetails(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeGatheringId,
+    expenseSettlement?.allReady,
+    sessionParticipantId,
+    sessionResponseToken,
+  ]);
+
+  useEffect(() => {
     if (!activeGathering) return;
     const participant = activeGathering.participants.find(
       (candidate) => candidate.id === participantSession?.participantId,
@@ -643,9 +679,18 @@ export default function Home() {
       }
     };
     const refreshExpenses = async (payload?: { participantName?: string }) => {
-      setExpenseSettlement(
-        await gatheringService.getExpenseSettlement(activeGathering.id),
-      );
+      const [settlement, details] = await Promise.all([
+        gatheringService.getExpenseSettlement(activeGathering.id),
+        participant && participantSession?.responseToken
+          ? gatheringService.getPaymentDetails(
+              activeGathering.id,
+              participant.id,
+              participantSession.responseToken,
+            )
+          : Promise.resolve(null),
+      ]);
+      setExpenseSettlement(settlement);
+      if (details) setPaymentDetails(details);
       if (
         payload?.participantName &&
         payload.participantName !== participant?.name
@@ -1047,6 +1092,46 @@ export default function Home() {
     }
   };
 
+  const savePaymentAlias = async (paymentAlias: string) => {
+    if (!activeGathering || !participantSession) return;
+    setIsSavingPaymentAlias(true);
+    setApiError("");
+    try {
+      await gatheringService.updatePaymentAlias(
+        activeGathering.id,
+        participantSession.participantId,
+        participantSession.responseToken,
+        paymentAlias,
+        accessToken,
+      );
+      setPaymentDetails(
+        await gatheringService.getPaymentDetails(
+          activeGathering.id,
+          participantSession.participantId,
+          participantSession.responseToken,
+        ),
+      );
+      showNotice(paymentAlias ? "Alias guardado." : "Alias eliminado.");
+    } catch (error) {
+      setApiError(
+        error instanceof Error
+          ? error.message
+          : "No pudimos guardar tu alias.",
+      );
+    } finally {
+      setIsSavingPaymentAlias(false);
+    }
+  };
+
+  const copyPaymentAlias = async (paymentAlias: string) => {
+    try {
+      await navigator.clipboard.writeText(paymentAlias);
+      showNotice("Alias copiado. Verificá el titular antes de transferir.");
+    } catch {
+      setApiError("No pudimos copiar el alias. Mantenelo presionado para copiarlo.");
+    }
+  };
+
   const markExpensesReady = async () => {
     if (!activeGathering || !participantSession) return;
     setIsMarkingExpensesReady(true);
@@ -1087,6 +1172,16 @@ export default function Home() {
     expenseSettlement?.readyParticipants.some(
       (participant) => participant.participantId === currentParticipant?.id,
     ) ?? false;
+  const recipientAliases = useMemo(
+    () =>
+      new Map(
+        paymentDetails?.recipients.map((recipient) => [
+          recipient.participantId,
+          recipient.paymentAlias,
+        ]) ?? [],
+      ),
+    [paymentDetails?.recipients],
+  );
   const respondingParticipants =
     activeGathering?.participants.filter(
       (participant) => (participant.availabilities?.length ?? 0) > 0,
@@ -1670,11 +1765,12 @@ export default function Home() {
                 )}
                 {activeGathering?.participants.map((participant, index) => {
                   const availableCount =
-                    participant.id === participantSession?.participantId
-                      ? yourSlots.length
-                      : (participant.availabilities?.filter(
-                          (availability) => availability.kind === "AVAILABLE",
-                        ).length ?? 0);
+                    participant.availabilities?.filter(
+                      (availability) => availability.kind === "AVAILABLE",
+                    ).length ?? 0;
+                  const availabilitySummary = formatAvailabilitySummary(
+                    participant.availabilities,
+                  );
                   const colors = [
                     "peach",
                     "blue",
@@ -1703,10 +1799,11 @@ export default function Home() {
                             ? " (vos)"
                             : ""}
                         </strong>
-                        <small>
-                          {availableCount > 0
-                            ? `${availableCount} horarios disponibles`
-                            : "Todavía no respondió"}
+                        <small
+                          className="friend-availability-detail"
+                          title={availabilitySummary}
+                        >
+                          {availabilitySummary}
                         </small>
                       </div>
                       <span
@@ -1766,8 +1863,6 @@ export default function Home() {
             onNotice={showNotice}
           />
         )}
-
-        {activeGathering ? <PartyGames /> : null}
 
         {activeGathering && (
           <section className="expenses-section" id="gastos">
@@ -1872,6 +1967,16 @@ export default function Home() {
                 )}
               </div>
             )}
+
+            {currentParticipant ? (
+              <PaymentAliasEditor
+                key={paymentDetails?.paymentAlias ?? "without-alias"}
+                paymentAlias={paymentDetails?.paymentAlias ?? null}
+                persistsToProfile={Boolean(user)}
+                isSaving={isSavingPaymentAlias}
+                onSave={savePaymentAlias}
+              />
+            ) : null}
 
             <div className="expenses-grid">
               <div className="expense-entry-card">
@@ -2025,6 +2130,30 @@ export default function Home() {
                       <div>
                         <strong>{transfer.fromName}</strong>
                         <small>le transfiere a {transfer.toName}</small>
+                        {expenseSettlement.allReady &&
+                        transfer.fromParticipantId === currentParticipant?.id ? (
+                          recipientAliases.get(transfer.toParticipantId) ? (
+                            <button
+                              className="transfer-alias"
+                              type="button"
+                              onClick={() =>
+                                void copyPaymentAlias(
+                                  recipientAliases.get(
+                                    transfer.toParticipantId,
+                                  )!,
+                                )
+                              }
+                              title="Copiar alias"
+                            >
+                              Alias: {recipientAliases.get(transfer.toParticipantId)}
+                              <span aria-hidden="true">⧉</span>
+                            </button>
+                          ) : (
+                            <small className="transfer-alias-missing">
+                              {transfer.toName} todavía no cargó su alias
+                            </small>
+                          )
+                        ) : null}
                       </div>
                       <b>{formatMoney(transfer.amountCents)}</b>
                       <span className="transfer-arrow">→</span>
@@ -2143,6 +2272,8 @@ export default function Home() {
           </div>
         </m.aside>
       )}
+
+      {activeGathering ? <PartyGames /> : null}
 
       <footer id="more">
         <a className="brand" href="#inicio">
@@ -2748,6 +2879,7 @@ export default function Home() {
         onDuplicateGathering={(item) => void duplicateGathering(item)}
       />
 
+      <PwaStatus />
       <AnimatedToast message={notice} />
     </main>
   );

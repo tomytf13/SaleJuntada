@@ -20,6 +20,7 @@ import { CreateGatheringDto } from "./dto/create-gathering.dto";
 import { GoogleParticipantDto } from "./dto/google-participant.dto";
 import { SetAvailabilityDto } from "./dto/set-availability.dto";
 import { UpdateDietaryProfileDto } from "./dto/update-dietary-profile.dto";
+import { UpdatePaymentAliasDto } from "./dto/update-payment-alias.dto";
 import { UpdatePurchasePlanDto } from "./dto/update-purchase-plan.dto";
 import { UpdatePurchaseContributionStatusDto } from "./dto/update-purchase-contribution-status.dto";
 import { UpdatePurchaseResponsibilityDto } from "./dto/update-purchase-responsibility.dto";
@@ -137,6 +138,39 @@ export class GatheringsController {
     );
     this.gatheringsGateway.dietaryChanged(gatheringId, participant.name);
     return participant;
+  }
+
+  @Get(":gatheringId/participants/:participantId/payment-details")
+  getPaymentDetails(
+    @Param("gatheringId") gatheringId: string,
+    @Param("participantId") participantId: string,
+    @Headers("x-participant-token") participantToken: string | undefined,
+  ) {
+    return this.gatheringsService.getPaymentDetails(
+      gatheringId,
+      participantId,
+      participantToken,
+    );
+  }
+
+  @Put(":gatheringId/participants/:participantId/payment-alias")
+  async updatePaymentAlias(
+    @Param("gatheringId") gatheringId: string,
+    @Param("participantId") participantId: string,
+    @Headers("authorization") authorization: string | undefined,
+    @Headers("x-participant-token") participantToken: string | undefined,
+    @Body() dto: UpdatePaymentAliasDto,
+  ) {
+    const identity = await this.authService.optionalIdentity(authorization);
+    const result = await this.gatheringsService.updatePaymentAlias(
+      gatheringId,
+      participantId,
+      participantToken,
+      dto,
+      identity,
+    );
+    this.gatheringsGateway.transfersChanged(gatheringId, result.name);
+    return { paymentAlias: result.paymentAlias };
   }
 
   @Get(":gatheringId/purchase")

@@ -908,6 +908,15 @@ button {
   font-size: 10px;
 }
 
+.friend-row .friend-availability-detail {
+  max-width: 100%;
+  line-height: 1.35;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 .saved-dot {
   color: #5b7f19;
   font-size: 10px;
@@ -1110,6 +1119,95 @@ button {
   color: #526408;
   font-size: 9px;
   font-weight: 900;
+}
+
+.payment-alias-card {
+  margin-top: 16px;
+  padding: 17px;
+  border: 1px solid #b7d8ee;
+  border-radius: 15px;
+  background: linear-gradient(135deg, #f2faff, #ffffff);
+  display: grid;
+  grid-template-columns: 42px 1fr;
+  gap: 13px;
+  box-shadow: 0 7px 24px rgba(12, 121, 216, 0.07);
+}
+
+.payment-alias-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 13px;
+  background: #0c79d8;
+  color: white;
+  display: grid;
+  place-items: center;
+  font-size: 20px;
+  font-weight: 900;
+}
+
+.payment-alias-copy {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.payment-alias-copy label {
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.payment-alias-copy p,
+.payment-alias-copy > small {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.payment-alias-controls {
+  margin-top: 5px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.payment-alias-controls input {
+  min-width: min(250px, 100%);
+  flex: 1 1 220px;
+  padding: 10px 12px;
+  border: 1px solid #cbd8dc;
+  border-radius: 9px;
+  background: white;
+  color: var(--ink);
+  font-size: 11px;
+  outline: none;
+}
+
+.payment-alias-controls input:focus {
+  border-color: #0c79d8;
+  box-shadow: 0 0 0 3px rgba(12, 121, 216, 0.12);
+}
+
+.payment-alias-controls button {
+  padding: 10px 13px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--ink);
+  color: white;
+  cursor: pointer;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.payment-alias-controls button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.payment-alias-controls .payment-alias-remove {
+  border: 1px solid #cfdbde;
+  background: white;
+  color: var(--ink-soft);
 }
 
 .expenses-grid {
@@ -1364,6 +1462,87 @@ button {
 .transfer-row small {
   color: #9eada8;
   font-size: 9px;
+}
+
+.transfer-row .transfer-alias {
+  width: fit-content;
+  margin-top: 4px;
+  padding: 5px 7px;
+  border: 1px solid rgba(104, 196, 255, 0.35);
+  border-radius: 7px;
+  background: rgba(104, 196, 255, 0.1);
+  color: #bde7ff;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.transfer-row .transfer-alias:hover,
+.transfer-row .transfer-alias:focus-visible {
+  border-color: #68c4ff;
+  background: rgba(104, 196, 255, 0.18);
+}
+
+.transfer-row .transfer-alias-missing {
+  margin-top: 3px;
+  color: #ffcf7b;
+}
+
+.pwa-status {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 120;
+  width: min(355px, calc(100vw - 36px));
+  padding: 15px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 15px;
+  background: rgba(24, 43, 40, 0.96);
+  color: white;
+  box-shadow: 0 18px 55px rgba(16, 34, 31, 0.28);
+  backdrop-filter: blur(14px);
+}
+
+.pwa-status > div {
+  display: grid;
+  gap: 6px;
+}
+
+.pwa-status strong {
+  font-size: 12px;
+}
+
+.pwa-status span {
+  color: #cbd8d4;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.pwa-status button {
+  width: fit-content;
+  padding: 8px 11px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--lime);
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.pwa-status-actions {
+  margin-top: 3px;
+  display: flex;
+  gap: 7px;
+}
+
+.pwa-status-actions button:last-child {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: transparent;
+  color: #d9e2df;
 }
 
 .transfer-arrow {
@@ -2619,6 +2798,26 @@ footer > span {
   .expense-closing button,
   .ready-confirmation {
     align-self: flex-start;
+  }
+
+  .payment-alias-card {
+    grid-template-columns: 1fr;
+  }
+
+  .payment-alias-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .payment-alias-controls input,
+  .payment-alias-controls button {
+    width: 100%;
+  }
+
+  .pwa-status {
+    right: 12px;
+    bottom: 82px;
+    width: calc(100vw - 24px);
   }
 
   .expense-total {
@@ -3947,6 +4146,8 @@ footer > span {
 }
 
 .party-games {
+  width: min(calc(100% - 40px), 1100px);
+  box-sizing: border-box;
   margin: 42px auto;
   padding: clamp(24px, 4vw, 38px);
   border-radius: 28px;

@@ -67,33 +67,41 @@ model Gathering {
 }
 
 model Participant {
-  id                   String                 @id @default(cuid())
-  gatheringId          String
-  gathering            Gathering              @relation(fields: [gatheringId], references: [id], onDelete: Cascade)
-  name                 String
-  contact              String?
-  avatarUrl            String?
-  googleSubject        String?
-  authUserId           String?
-  dietaryPreferences   String[]               @default([])
-  mealArrangement      String?
-  isOrganizer          Boolean                @default(false)
-  responseToken        String                 @unique @default(cuid())
-  expensesReadyAt      DateTime?
-  availabilities       Availability[]
-  expensesPaid         Expense[]
-  transfersSent        TransferConfirmation[] @relation("TransferFrom")
-  transfersReceived    TransferConfirmation[] @relation("TransferTo")
-  purchasePlansUpdated PurchasePlan[]         @relation("PurchasePlanUpdatedBy")
+  id                    String                 @id @default(cuid())
+  gatheringId           String
+  gathering             Gathering              @relation(fields: [gatheringId], references: [id], onDelete: Cascade)
+  name                  String
+  contact               String?
+  avatarUrl             String?
+  googleSubject         String?
+  authUserId            String?
+  dietaryPreferences    String[]               @default([])
+  mealArrangement       String?
+  paymentAlias          String?
+  isOrganizer           Boolean                @default(false)
+  responseToken         String                 @unique @default(cuid())
+  expensesReadyAt       DateTime?
+  availabilities        Availability[]
+  expensesPaid          Expense[]
+  transfersSent         TransferConfirmation[] @relation("TransferFrom")
+  transfersReceived     TransferConfirmation[] @relation("TransferTo")
+  purchasePlansUpdated  PurchasePlan[]         @relation("PurchasePlanUpdatedBy")
   purchaseItemsAssigned PurchaseItem[]         @relation("PurchaseItemAssignee")
   purchaseContributions PurchaseContribution[]
-  createdAt            DateTime               @default(now())
-  updatedAt            DateTime               @updatedAt
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
 
   @@unique([gatheringId, googleSubject])
   @@unique([gatheringId, authUserId])
   @@index([gatheringId])
   @@index([authUserId])
+}
+
+model UserPaymentProfile {
+  authUserId   String   @id
+  paymentAlias String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
 
 model Availability {
@@ -178,22 +186,22 @@ model PurchasePlan {
 }
 
 model PurchaseItem {
-  id                    String           @id @default(cuid())
+  id                    String                 @id @default(cuid())
   purchasePlanId        String
-  purchasePlan          PurchasePlan     @relation(fields: [purchasePlanId], references: [id], onDelete: Cascade)
+  purchasePlan          PurchasePlan           @relation(fields: [purchasePlanId], references: [id], onDelete: Cascade)
   key                   String
   label                 String
   unit                  String
   quantity              Int
   category              PurchaseCategory
-  position              Int              @default(0)
+  position              Int                    @default(0)
   assignedParticipantId String?
-  assignee              Participant?     @relation("PurchaseItemAssignee", fields: [assignedParticipantId], references: [id], onDelete: SetNull)
+  assignee              Participant?           @relation("PurchaseItemAssignee", fields: [assignedParticipantId], references: [id], onDelete: SetNull)
   assignedAt            DateTime?
-  isReady               Boolean          @default(false)
+  isReady               Boolean                @default(false)
   contributions         PurchaseContribution[]
-  createdAt             DateTime         @default(now())
-  updatedAt             DateTime         @updatedAt
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
 
   @@unique([purchasePlanId, key])
   @@index([purchasePlanId, position])
@@ -207,9 +215,9 @@ model PurchaseContribution {
   participantId         String
   participant           Participant          @relation(fields: [participantId], references: [id], onDelete: Cascade)
   catalogProductId      String?
-  catalogProduct        CatalogProduct?       @relation(fields: [catalogProductId], references: [id], onDelete: SetNull)
+  catalogProduct        CatalogProduct?      @relation(fields: [catalogProductId], references: [id], onDelete: SetNull)
   catalogPresentationId String?
-  catalogPresentation   CatalogPresentation?  @relation(fields: [catalogPresentationId], references: [id], onDelete: SetNull)
+  catalogPresentation   CatalogPresentation? @relation(fields: [catalogPresentationId], references: [id], onDelete: SetNull)
   description           String
   quantity              Int                  @default(1)
   unit                  String               @default("unidad")
@@ -226,22 +234,22 @@ model PurchaseContribution {
 }
 
 model CatalogProduct {
-  id            String                @id @default(cuid())
-  key           String                @unique
+  id            String                 @id @default(cuid())
+  key           String                 @unique
   categoryKey   String
   name          String
   brand         String?
   description   String?
   visualKey     String
-  accentColor   String                @default("#ff6b35")
-  tags          String[]              @default([])
-  isAlcohol     Boolean               @default(false)
-  isActive      Boolean               @default(true)
-  position      Int                   @default(0)
+  accentColor   String                 @default("#ff6b35")
+  tags          String[]               @default([])
+  isAlcohol     Boolean                @default(false)
+  isActive      Boolean                @default(true)
+  position      Int                    @default(0)
   presentations CatalogPresentation[]
   contributions PurchaseContribution[]
-  createdAt     DateTime              @default(now())
-  updatedAt     DateTime              @updatedAt
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
 
   @@index([categoryKey, isActive, position])
 }

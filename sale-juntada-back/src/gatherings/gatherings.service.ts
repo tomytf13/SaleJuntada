@@ -18,6 +18,7 @@ import { CreateGatheringDto } from "./dto/create-gathering.dto";
 import { GoogleParticipantDto } from "./dto/google-participant.dto";
 import { SetAvailabilityDto } from "./dto/set-availability.dto";
 import { UpdateDietaryProfileDto } from "./dto/update-dietary-profile.dto";
+import { UpdatePaymentAliasDto } from "./dto/update-payment-alias.dto";
 import { UpdatePurchasePlanDto } from "./dto/update-purchase-plan.dto";
 import { UpdatePurchaseContributionStatusDto } from "./dto/update-purchase-contribution-status.dto";
 import { UpsertPurchaseContributionDto } from "./dto/upsert-purchase-contribution.dto";
@@ -192,6 +193,12 @@ export class GatheringsService {
     }
 
     return this.prisma.$transaction(async (transaction) => {
+      const paymentProfile = identity
+        ? await transaction.userPaymentProfile.findUnique({
+            where: { authUserId: identity.id },
+            select: { paymentAlias: true },
+          })
+        : null;
       const template = dto.templateGatheringId
         ? await transaction.gathering.findFirst({
             where: {
@@ -252,6 +259,7 @@ export class GatheringsService {
               contact: identity?.email,
               avatarUrl: dto.organizerAvatarUrl,
               authUserId: identity?.id,
+              paymentAlias: paymentProfile?.paymentAlias,
               isOrganizer: true,
             },
           },
@@ -1289,6 +1297,96 @@ export class GatheringsService {
     };
   }
 
+  async getPaymentDetails(
+    gatheringId: string,
+    participantId: string,
+    participantToken: string | undefined,
+  ) {
+    const participant = await this.prisma.participant.findFirst({
+      where: { id: participantId, gatheringId },
+      select: {
+        id: true,
+        paymentAlias: true,
+        responseToken: true,
+      },
+    });
+    if (!participant) throw new NotFoundException("Participante no encontrado");
+    if (!participantToken || participant.responseToken !== participantToken) {
+      throw new UnauthorizedException("No podés ver datos de pago de otra persona");
+    }
+
+    const settlement = await this.getExpenseSettlement(gatheringId);
+    if (!settlement.allReady) {
+      return { paymentAlias: participant.paymentAlias, recipients: [] };
+    }
+
+    const recipientIds = [
+      ...new Set(
+        settlement.transfers
+          .filter((transfer) => transfer.fromParticipantId === participantId)
+          .map((transfer) => transfer.toParticipantId),
+      ),
+    ];
+    const recipients = recipientIds.length
+      ? await this.prisma.participant.findMany({
+          where: { gatheringId, id: { in: recipientIds } },
+          select: { id: true, name: true, paymentAlias: true },
+        })
+      : [];
+
+    return {
+      paymentAlias: participant.paymentAlias,
+      recipients: recipients.map((recipient) => ({
+        participantId: recipient.id,
+        name: recipient.name,
+        paymentAlias: recipient.paymentAlias,
+      })),
+    };
+  }
+
+  async updatePaymentAlias(
+    gatheringId: string,
+    participantId: string,
+    participantToken: string | undefined,
+    dto: UpdatePaymentAliasDto,
+    identity: AuthIdentity | null,
+  ) {
+    const participant = await this.prisma.participant.findFirst({
+      where: { id: participantId, gatheringId },
+      select: {
+        id: true,
+        name: true,
+        authUserId: true,
+        responseToken: true,
+      },
+    });
+    if (!participant) throw new NotFoundException("Participante no encontrado");
+    if (!participantToken || participant.responseToken !== participantToken) {
+      throw new UnauthorizedException("No podés editar el alias de otra persona");
+    }
+
+    const paymentAlias = this.normalizePaymentAlias(dto.paymentAlias);
+    return this.prisma.$transaction(async (transaction) => {
+      if (participant.authUserId && identity?.id === participant.authUserId) {
+        await transaction.userPaymentProfile.upsert({
+          where: { authUserId: participant.authUserId },
+          create: { authUserId: participant.authUserId, paymentAlias },
+          update: { paymentAlias },
+        });
+        await transaction.participant.updateMany({
+          where: { authUserId: participant.authUserId },
+          data: { paymentAlias },
+        });
+      } else {
+        await transaction.participant.update({
+          where: { id: participant.id },
+          data: { paymentAlias },
+        });
+      }
+      return { ...participant, paymentAlias };
+    });
+  }
+
   async markExpensesReady(
     gatheringId: string,
     participantId: string,
@@ -1452,6 +1550,10 @@ export class GatheringsService {
     dto: AuthParticipantDto,
   ) {
     await this.ensureGathering(gatheringId);
+    const paymentProfile = await this.prisma.userPaymentProfile.findUnique({
+      where: { authUserId: identity.id },
+      select: { paymentAlias: true },
+    });
     return this.prisma.participant.upsert({
       where: {
         gatheringId_authUserId: {
@@ -1465,6 +1567,7 @@ export class GatheringsService {
         name: dto.name?.trim() || this.nameFromIdentity(identity),
         contact: identity.email,
         avatarUrl: dto.avatarUrl,
+        paymentAlias: paymentProfile?.paymentAlias,
       },
       update: {},
     });
@@ -1484,6 +1587,10 @@ export class GatheringsService {
       throw new UnauthorizedException("No podés vincular otra participación");
     }
 
+    const paymentProfile = await this.prisma.userPaymentProfile.findUnique({
+      where: { authUserId: identity.id },
+      select: { paymentAlias: true },
+    });
     const existing = await this.prisma.participant.findUnique({
       where: {
         gatheringId_authUserId: {
@@ -1492,13 +1599,20 @@ export class GatheringsService {
         },
       },
     });
-    if (existing) return existing;
+    if (existing) {
+      if (existing.paymentAlias || !paymentProfile?.paymentAlias) return existing;
+      return this.prisma.participant.update({
+        where: { id: existing.id },
+        data: { paymentAlias: paymentProfile.paymentAlias },
+      });
+    }
 
     return this.prisma.participant.update({
       where: { id: participant.id },
       data: {
         authUserId: identity.id,
         contact: participant.contact ?? identity.email,
+        paymentAlias: participant.paymentAlias ?? paymentProfile?.paymentAlias,
       },
     });
   }
@@ -1516,6 +1630,17 @@ export class GatheringsService {
   private nameFromIdentity(identity: AuthIdentity) {
     const emailName = identity.email?.split("@")[0]?.trim();
     return emailName || "Invitado";
+  }
+
+  private normalizePaymentAlias(value: string) {
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) return null;
+    if (!/^[a-z0-9.-]{6,20}$/.test(normalized)) {
+      throw new BadRequestException(
+        "El alias debe tener entre 6 y 20 caracteres: letras, números, punto o guion",
+      );
+    }
+    return normalized;
   }
 
   private transferKey(

@@ -129,6 +129,15 @@ export type ExpenseSettlement = {
   }>;
 };
 
+export type PaymentDetails = {
+  paymentAlias: string | null;
+  recipients: Array<{
+    participantId: string;
+    name: string;
+    paymentAlias: string | null;
+  }>;
+};
+
 export type DietaryPreference = "CELIAC" | "VEGAN" | "VEGETARIAN";
 export type MealArrangement = "SELF_MANAGED" | "GROUP_MENU";
 
@@ -499,6 +508,39 @@ export const gatheringService = {
   getExpenseSettlement(gatheringId: string) {
     return request<ExpenseSettlement>(
       `/gatherings/${gatheringId}/expenses/settlement`,
+    );
+  },
+
+  getPaymentDetails(
+    gatheringId: string,
+    participantId: string,
+    participantToken: string,
+  ) {
+    return request<PaymentDetails>(
+      `/gatherings/${gatheringId}/participants/${participantId}/payment-details`,
+      { headers: { "x-participant-token": participantToken } },
+    );
+  },
+
+  updatePaymentAlias(
+    gatheringId: string,
+    participantId: string,
+    participantToken: string,
+    paymentAlias: string,
+    accessToken?: string | null,
+  ) {
+    return request<{ paymentAlias: string | null }>(
+      `/gatherings/${gatheringId}/participants/${participantId}/payment-alias`,
+      {
+        method: "PUT",
+        headers: {
+          "x-participant-token": participantToken,
+          ...(accessToken
+            ? { Authorization: `Bearer ${accessToken}` }
+            : undefined),
+        },
+        body: JSON.stringify({ paymentAlias }),
+      },
     );
   },
 
