@@ -1681,85 +1681,6 @@ button {
   line-height: 1.55;
 }
 
-.support-card {
-  width: min(1000px, calc(100% - 40px));
-  margin: 0 auto 80px;
-  padding: 24px 28px;
-  border: 1px solid #e1a58f;
-  border-radius: 21px;
-  background: #ffe2da;
-  display: grid;
-  grid-template-columns: 70px 1fr auto;
-  align-items: center;
-  gap: 22px;
-  box-shadow: 10px 12px 0 rgba(24, 43, 40, 0.05);
-  transform: rotate(-0.35deg);
-}
-
-.support-emoji {
-  width: 66px;
-  height: 66px;
-  border-radius: 19px;
-  background: white;
-  display: grid;
-  place-items: center;
-  font-size: 34px;
-  transform: rotate(5deg);
-}
-
-.support-card > div:nth-child(2) > span {
-  color: #a34a36;
-  font-size: 8px;
-  font-weight: 900;
-  letter-spacing: 1px;
-}
-
-.support-card h2 {
-  margin: 5px 0 4px;
-  font-family: Georgia, serif;
-  font-size: 25px;
-}
-
-.support-card p {
-  margin: 0;
-  color: var(--ink-soft);
-  font-size: 10px;
-}
-
-.support-alias {
-  min-width: 210px;
-  padding: 12px 14px;
-  border-radius: 13px;
-  background: rgba(255, 255, 255, 0.72);
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 3px 12px;
-}
-
-.support-alias small {
-  grid-column: 1 / -1;
-  color: var(--ink-soft);
-  font-size: 8px;
-}
-
-.support-alias strong {
-  align-self: center;
-  font-size: 12px;
-}
-
-.support-alias button {
-  grid-row: 2;
-  grid-column: 2;
-  padding: 7px 9px;
-  border: 0;
-  border-radius: 8px;
-  background: var(--ink);
-  color: white;
-  cursor: pointer;
-  font-size: 8px;
-  font-weight: 900;
-}
-
 footer {
   min-height: 105px;
   padding: 28px max(20px, calc((100vw - 1100px) / 2));
@@ -2679,13 +2600,6 @@ footer > span {
     grid-template-columns: 1fr;
   }
 
-  .support-card {
-    grid-template-columns: 62px 1fr;
-  }
-
-  .support-alias {
-    grid-column: 1 / -1;
-  }
 }
 
 @media (max-width: 600px) {
@@ -2698,18 +2612,6 @@ footer > span {
   .hero,
   .steps-section {
     width: min(100% - 28px, 1180px);
-  }
-
-  .support-card {
-    margin-bottom: 55px;
-    padding: 20px;
-    grid-template-columns: 1fr;
-    transform: none;
-  }
-
-  .support-alias {
-    grid-column: auto;
-    min-width: 0;
   }
 
   .topbar {

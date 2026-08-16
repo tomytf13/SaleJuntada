@@ -58,7 +58,6 @@ type Slot = {
   endsAt: string;
 };
 
-const supportAlias = import.meta.env.VITE_SUPPORT_ALIAS?.trim();
 const avatarPresets = ["🦆", "🐸", "🦖", "🦥", "🦝", "🍕"];
 const timeWindowPresets = [
   { label: "Almuerzo", icon: "☀️", start: "11:00", end: "17:00" },
@@ -873,13 +872,6 @@ export default function Home() {
     } catch {
       setNotice("El link está listo para compartir.");
     }
-    window.setTimeout(() => setNotice(""), 2800);
-  };
-
-  const copySupportAlias = async () => {
-    if (!supportAlias) return;
-    await navigator.clipboard.writeText(supportAlias);
-    setNotice("Alias copiado. ¡Gracias por la buena onda! 🍺");
     window.setTimeout(() => setNotice(""), 2800);
   };
 
@@ -2244,35 +2236,6 @@ export default function Home() {
         </div>
       </m.section>
 
-      {supportAlias && (
-        <m.aside
-          className="support-card"
-          initial={{ opacity: 0, y: 16 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, amount: 0.2 }}
-          transition={standardTransition}
-        >
-          <div className="support-emoji" aria-hidden="true">
-            🍺
-          </div>
-          <div>
-            <span>VOLUNTAD TOTALMENTE OPCIONAL</span>
-            <h2>¿Te ahorramos 84 mensajes?</h2>
-            <p>
-              Si Sale Juntada te salvó el plan, podés invitarme una birrita de
-              onda.
-            </p>
-          </div>
-          <div className="support-alias">
-            <small>Alias</small>
-            <strong>{supportAlias}</strong>
-            <button type="button" onClick={copySupportAlias}>
-              Copiar alias
-            </button>
-          </div>
-        </m.aside>
-      )}
-
       {activeGathering ? <PartyGames /> : null}
 
       <footer id="more">
@@ -2309,7 +2272,7 @@ export default function Home() {
         }}
         onMore={() =>
           document
-            .querySelector("#juegos, .support-card, footer")
+            .querySelector("#juegos, footer")
             ?.scrollIntoView({ behavior: "smooth" })
         }
       />

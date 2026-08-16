@@ -84,7 +84,6 @@ El frontend usa variables del tipo:
 ```bash
 VITE_API_URL
 VITE_SOCKET_URL
-VITE_SUPPORT_ALIAS
 VITE_GOOGLE_CLIENT_ID
 ```
 
