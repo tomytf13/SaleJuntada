@@ -273,26 +273,33 @@ type ParticipantSession = {
   responseToken: string;
 };
 
-function sessionKey(gatheringId: string) {
-  return `sale-juntada:participant:${gatheringId}`;
+/**
+ * La sesión se guarda por slug, no por id de juntada.
+ *
+ * El slug es lo único que se conoce al abrir `/j/:slug`, y ahora el token
+ * tiene que viajar en el primer request: el backend decide con él si
+ * devuelve la vista pública o la completa. Indexar por id obligaba a pedir
+ * la juntada dos veces —una para averiguar el id y otra ya con
+ * credencial— en cada carga.
+ */
+function sessionKey(slug: string) {
+  return `sale-juntada:participant:${slug}`;
 }
 
 function storeParticipantSession(
-  gatheringId: string,
+  slug: string,
   participantId: string,
   responseToken: string,
 ) {
   localStorage.setItem(
-    sessionKey(gatheringId),
+    sessionKey(slug),
     JSON.stringify({ participantId, responseToken }),
   );
 }
 
-function readParticipantSession(
-  gatheringId: string,
-): ParticipantSession | null {
+function readParticipantSession(slug: string): ParticipantSession | null {
   try {
-    const value = localStorage.getItem(sessionKey(gatheringId));
+    const value = localStorage.getItem(sessionKey(slug));
     return value ? (JSON.parse(value) as ParticipantSession) : null;
   } catch {
     return null;
@@ -414,6 +421,9 @@ export default function Home() {
    * que ese valor dispare una reconexión (ver el efecto del socket, abajo). */
   const activeGatheringRef = useRef(activeGathering);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Clave del gasto que se está intentando cargar. Sobrevive a los
+   * reintentos y se descarta recién cuando el gasto quedó guardado. */
+  const expenseIdempotencyKeyRef = useRef<string | null>(null);
   const saveAvailabilityTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -462,7 +472,7 @@ export default function Home() {
 
   const openGatheringFromHistory = (item: GatheringHistoryItem) => {
     storeParticipantSession(
-      item.id,
+      item.slug,
       item.participant.id,
       item.participant.responseToken,
     );
@@ -568,14 +578,18 @@ export default function Home() {
     const match = locationState.pathname.match(/^\/j\/([^/]+)$/);
     if (!match) return;
 
+    const slug = decodeURIComponent(match[1]);
     let cancelled = false;
+    // El token viaja en el primer request: define si el backend responde la
+    // vista pública o la completa.
+    const session = readParticipantSession(slug);
     Promise.resolve()
       .then(() => {
         if (!cancelled) {
           setIsLoadingGathering(true);
           setApiError("");
         }
-        return gatheringService.getBySlug(decodeURIComponent(match[1]));
+        return gatheringService.getBySlug(slug, session?.responseToken);
       })
       .then((gathering) => {
         if (cancelled) return;
@@ -584,27 +598,29 @@ export default function Home() {
         setPaymentDetails(null);
         setEventName(gathering.title);
         setLocation(gathering.locationHint ?? "Lugar a definir");
-        gatheringService
-          .getMatches(gathering.id)
-          .then((result) => {
-            if (!cancelled) setMatches(result);
-          })
-          .catch(() => {
-            if (!cancelled) setMatches([]);
-          });
-        gatheringService
-          .getExpenseSettlement(gathering.id)
-          .then((result) => {
-            if (!cancelled) setExpenseSettlement(result);
-          })
-          .catch(() => {
-            if (!cancelled) setExpenseSettlement(null);
-          });
-        const session = readParticipantSession(gathering.id);
         const participant = gathering.participants.find(
           (candidate) => candidate.id === session?.participantId,
         );
-        if (session && participant) {
+        // Coincidencias, gastos y compra ahora exigen credencial: sólo se
+        // piden cuando el backend confirmó que esta sesión es participante.
+        if (session && gathering.isParticipant && participant) {
+          const token = session.responseToken;
+          gatheringService
+            .getMatches(gathering.id, token)
+            .then((result) => {
+              if (!cancelled) setMatches(result);
+            })
+            .catch(() => {
+              if (!cancelled) setMatches([]);
+            });
+          gatheringService
+            .getExpenseSettlement(gathering.id, token)
+            .then((result) => {
+              if (!cancelled) setExpenseSettlement(result);
+            })
+            .catch(() => {
+              if (!cancelled) setExpenseSettlement(null);
+            });
           setParticipantSession(session);
           setAvailabilitySelection(
             participant.availabilities
@@ -612,6 +628,8 @@ export default function Home() {
               .map((availability) => availability.startsAt) ?? [],
           );
         } else {
+          setMatches([]);
+          setExpenseSettlement(null);
           setParticipantSession(null);
           setAvailabilitySelection([]);
           setShowJoin(true);
@@ -703,7 +721,11 @@ export default function Home() {
   }, [activeGathering]);
 
   useEffect(() => {
-    if (!activeGatheringId) return;
+    // El tiempo real ya no es público: la sala de una juntada exige la
+    // misma credencial que la API. Sin sesión no se abre el socket.
+    if (!activeGatheringId || !sessionParticipantId || !sessionResponseToken) {
+      return;
+    }
 
     const currentParticipant = () =>
       activeGatheringRef.current?.participants.find(
@@ -713,21 +735,23 @@ export default function Home() {
     const socket = io(SOCKET_URL, { transports: ["websocket", "polling"] });
     socketRef.current = socket;
     const join = () => {
-      if (sessionParticipantId && sessionResponseToken) {
-        socket.emit("gathering:join", {
-          gatheringId: activeGatheringId,
-          participantId: sessionParticipantId,
-          participantToken: sessionResponseToken,
-        });
-      } else {
-        socket.emit("gathering:watch", { gatheringId: activeGatheringId });
-      }
+      socket.emit("gathering:join", {
+        gatheringId: activeGatheringId,
+        participantId: sessionParticipantId,
+        participantToken: sessionResponseToken,
+      });
     };
     const refreshExpenses = async (payload?: { participantName?: string }) => {
       const participant = currentParticipant();
+      // La liquidación ya no es pública: sin credencial no hay nada que
+      // refrescar.
+      if (!sessionResponseToken) return;
       const [settlement, details] = await Promise.all([
-        gatheringService.getExpenseSettlement(activeGatheringId),
-        participant && sessionResponseToken
+        gatheringService.getExpenseSettlement(
+          activeGatheringId,
+          sessionResponseToken,
+        ),
+        participant
           ? gatheringService.getPaymentDetails(
               activeGatheringId,
               participant.id,
@@ -900,7 +924,7 @@ export default function Home() {
           session.responseToken,
           payload,
         );
-        setMatches(await gatheringService.getMatches(gathering.id));
+        setMatches(await gatheringService.getMatches(gathering.id, session.responseToken));
         setActiveGathering((current) => {
           if (!current) return current;
           return {
@@ -1033,7 +1057,7 @@ export default function Home() {
           responseToken: organizer.responseToken,
         };
         storeParticipantSession(
-          gathering.id,
+          gathering.slug,
           session.participantId,
           session.responseToken,
         );
@@ -1080,7 +1104,7 @@ export default function Home() {
         responseToken: participant.responseToken,
       };
       storeParticipantSession(
-        activeGathering.id,
+        activeGathering.slug,
         session.participantId,
         session.responseToken,
       );
@@ -1122,6 +1146,11 @@ export default function Home() {
     const amount = Number(expenseAmount.replace(/\./g, ""));
     if (!description || !Number.isFinite(amount) || amount <= 0) return;
 
+    // Una clave por intento lógico, reusada mientras el formulario no se
+    // limpie: si el primer envío se pierde en la red y la persona vuelve a
+    // tocar, el backend reconoce el reintento en vez de duplicar el gasto.
+    expenseIdempotencyKeyRef.current ??= crypto.randomUUID();
+
     setIsSavingExpense(true);
     setApiError("");
     try {
@@ -1129,13 +1158,17 @@ export default function Home() {
         activeGathering.id,
         participantSession.participantId,
         participantSession.responseToken,
+        expenseIdempotencyKeyRef.current,
         {
           description,
           amountCents: Math.round(amount * 100),
         },
       );
+      // Recién cuando el gasto quedó guardado se descarta la clave: el
+      // próximo gasto es un intento nuevo y necesita una propia.
+      expenseIdempotencyKeyRef.current = null;
       setExpenseSettlement(
-        await gatheringService.getExpenseSettlement(activeGathering.id),
+        await gatheringService.getExpenseSettlement(activeGathering.id, participantSession.responseToken),
       );
       form.reset();
       setExpenseAmount("");
@@ -1185,7 +1218,7 @@ export default function Home() {
         },
       );
       setExpenseSettlement(
-        await gatheringService.getExpenseSettlement(activeGathering.id),
+        await gatheringService.getExpenseSettlement(activeGathering.id, participantSession.responseToken),
       );
       setNotice("Transferencia marcada como realizada.");
       window.setTimeout(() => setNotice(""), 2800);
@@ -1249,7 +1282,7 @@ export default function Home() {
         participantSession.responseToken,
       );
       setExpenseSettlement(
-        await gatheringService.getExpenseSettlement(activeGathering.id),
+        await gatheringService.getExpenseSettlement(activeGathering.id, participantSession.responseToken),
       );
       setNotice("Confirmaste que ya cargaste todos tus gastos.");
       window.setTimeout(() => setNotice(""), 2800);
@@ -1333,7 +1366,7 @@ export default function Home() {
           )
           ?.availabilities?.map((availability) => availability.startsAt) ?? [],
       );
-      setMatches(await gatheringService.getMatches(updated.id));
+      setMatches(await gatheringService.getMatches(updated.id, participantSession.responseToken));
       setShowManageGathering(false);
       showNotice("Juntada actualizada para todo el grupo.");
     } catch (error) {
@@ -1405,7 +1438,7 @@ export default function Home() {
         },
       );
       setExpenseSettlement(
-        await gatheringService.getExpenseSettlement(activeGathering.id),
+        await gatheringService.getExpenseSettlement(activeGathering.id, participantSession.responseToken),
       );
       setEditingExpense(null);
       showNotice("Gasto corregido y cuentas recalculadas.");
@@ -1431,7 +1464,7 @@ export default function Home() {
         expense.id,
       );
       setExpenseSettlement(
-        await gatheringService.getExpenseSettlement(activeGathering.id),
+        await gatheringService.getExpenseSettlement(activeGathering.id, participantSession.responseToken),
       );
       showNotice("Gasto eliminado y cuentas recalculadas.");
     } catch (error) {
@@ -1465,6 +1498,17 @@ export default function Home() {
     activeGathering?.participants.filter(
       (participant) => (participant.availabilities?.length ?? 0) > 0,
     ).length ?? 0;
+  /**
+   * Cuánta gente hay en la juntada.
+   *
+   * Sin sesión el backend no manda la lista de participantes —no revela
+   * identidades a quien sólo tiene el link— pero sí el total, que es lo que
+   * hace falta para mostrar "5 personas" en la pantalla de invitación.
+   */
+  const participantTotal =
+    activeGathering?.participantCount ??
+    activeGathering?.participants.length ??
+    0;
   const bestMatch = matches[0];
   const resultAnalysis = useMemo(() => {
     if (!activeGathering || !bestMatch) return null;
@@ -1536,7 +1580,7 @@ export default function Home() {
         title: "Esperando respuestas",
         detail: location,
         available: 0,
-        total: activeGathering.participants.length,
+        total: participantTotal,
         people: activeGathering.participants.map((participant) => ({
           id: participant.id,
           name: participant.name,
@@ -1592,7 +1636,7 @@ export default function Home() {
           : "Mejor opción",
       note: "Calculamos esta opción con las disponibilidades cargadas por el grupo.",
     };
-  }, [activeGathering, location, matches]);
+  }, [activeGathering, location, matches, participantTotal]);
 
   const createSchedulePreview = useMemo(() => {
     const firstDay = new Date(`${createFrom}T00:00:00`);
@@ -1623,13 +1667,22 @@ export default function Home() {
       setShowResults(true);
       return;
     }
+    if (!participantSession) {
+      setShowJoin(true);
+      return;
+    }
 
     setApiError("");
     socketRef.current?.emit("analysis:started", {
       gatheringId: activeGathering.id,
     });
     try {
-      setMatches(await gatheringService.getMatches(activeGathering.id));
+      setMatches(
+        await gatheringService.getMatches(
+          activeGathering.id,
+          participantSession.responseToken,
+        ),
+      );
       setShowResults(true);
     } catch (error) {
       setApiError(
@@ -2037,13 +2090,13 @@ export default function Home() {
                 <h3>El grupo</h3>
                 <p>
                   {activeGathering
-                    ? `${activeGathering.participants.length} personas`
+                    ? `${participantTotal} personas`
                     : "6 personas invitadas"}
                 </p>
               </div>
               <span className="response-pill">
                 {activeGathering
-                  ? `${respondingParticipants}/${activeGathering.participants.length} respondieron`
+                  ? `${respondingParticipants}/${participantTotal} respondieron`
                   : "6/6 respondieron"}
               </span>
             </div>
@@ -2169,7 +2222,7 @@ export default function Home() {
             canEdit={Boolean(currentParticipant?.isOrganizer)}
             remoteRevision={purchaseRevision}
             isLiveConnected={isLiveConnected}
-            participantCount={activeGathering?.participants.length ?? 6}
+            participantCount={activeGathering ? participantTotal : 6}
             participants={activeGathering?.participants}
             currentParticipant={currentParticipant}
             onRequireParticipant={() => setShowJoin(true)}

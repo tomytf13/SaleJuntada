@@ -6,7 +6,9 @@ import { AuthModule } from "./auth/auth.module";
 import { GatheringsModule } from "./gatherings/gatherings.module";
 import { HealthController } from "./health/health.controller";
 import { LocationsModule } from "./locations/locations.module";
+import { ParticipantsModule } from "./participants/participants.module";
 import { PrismaModule } from "./prisma/prisma.module";
+import { RsvpModule } from "./rsvp/rsvp.module";
 import { UsersModule } from "./users/users.module";
 
 @Module({
@@ -15,6 +17,8 @@ import { UsersModule } from "./users/users.module";
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }]),
     PrismaModule,
     AuthModule,
+    ParticipantsModule,
+    RsvpModule,
     GatheringsModule,
     LocationsModule,
     UsersModule,

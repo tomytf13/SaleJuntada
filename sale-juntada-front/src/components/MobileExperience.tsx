@@ -591,10 +591,11 @@ export function PurchasePlanner({
   }, [gatheringId, purchase, storageKey]);
 
   useEffect(() => {
-    if (!gatheringId) return;
+    // El plan de compra dejó de ser público: sin credencial no se pide.
+    if (!gatheringId || !participantToken) return;
     let cancelled = false;
     gatheringService
-      .getPurchasePlan(gatheringId)
+      .getPurchasePlan(gatheringId, participantToken)
       .then((plan) => {
         if (cancelled) return;
         setPurchase(plan);
@@ -610,7 +611,7 @@ export function PurchasePlanner({
     return () => {
       cancelled = true;
     };
-  }, [gatheringId, participantCount, remoteRevision]);
+  }, [gatheringId, participantToken, participantCount, remoteRevision]);
 
   useEffect(() => {
     if (

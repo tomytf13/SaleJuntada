@@ -84,7 +84,9 @@ El frontend usa variables del tipo:
 ```bash
 VITE_API_URL
 VITE_SOCKET_URL
-VITE_GOOGLE_CLIENT_ID
+VITE_SUPABASE_URL
+VITE_SUPABASE_PUBLISHABLE_KEY
+VITE_MAP_TILES_URL
 ```
 
 El backend está preparado para PostgreSQL/Supabase con:
@@ -93,11 +95,15 @@ El backend está preparado para PostgreSQL/Supabase con:
 DATABASE_URL
 DIRECT_URL
 FRONTEND_URLS
-GOOGLE_CLIENT_ID
-GOOGLE_CLIENT_SECRET
-GOOGLE_CALENDAR_REDIRECT_URI
-GOOGLE_TOKEN_ENCRYPTION_KEY
+SUPABASE_URL
+SUPABASE_PUBLISHABLE_KEY
 ```
+
+El acceso con cuenta va enteramente por Supabase Auth. El flujo propio de
+Google (`VITE_GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_ID`) se eliminó en P0: eran
+dos mecanismos de autenticación en paralelo y el frontend ya no usaba el
+segundo. Las variables de Google Calendar volverán cuando se implemente esa
+integración ([docs/google-calendar.md](docs/google-calendar.md)).
 
 ## 🗄️ Base de datos con Supabase
 
@@ -156,9 +162,22 @@ no pertenezcan a la grilla de la juntada.
 
 ## 🔒 Notas de seguridad
 
-- El slug de cada juntada usa 8 bytes aleatorios: es la única barrera que
-  protege nombres, fotos, disponibilidad, gastos y la ubicación exacta del
-  encuentro, dado que unirse no requiere cuenta.
+- `Participant.responseToken` es una credencial bearer y se genera con
+  `randomBytes(32)` desde `generateParticipantToken()`
+  ([participant-token.ts](sale-juntada-back/src/participants/participant-token.ts)).
+  No tiene `@default(cuid())`: cuid v1 no es criptográficamente aleatorio y
+  ese token autoriza gastos, transferencias y el cierre de la juntada.
+- `GET /api/gatherings/:slug` devuelve dos representaciones distintas. Sin
+  `x-participant-token`, sólo lo necesario para decidir sumarse. Con un
+  token válido, la juntada completa. Coincidencias, plan de compra y
+  liquidación exigen credencial siempre.
+- La sala de Socket.IO de una juntada exige la misma credencial que la API,
+  resuelta por el mismo `ParticipantAuthService`.
+- `POST .../expenses` exige la cabecera `Idempotency-Key`. El índice único
+  `(gatheringId, idempotencyKey)` es la garantía real: un reintento
+  devuelve el gasto ya creado y no vuelve a incrementar `expenseRound`.
+- El slug de cada juntada usa 8 bytes aleatorios y sigue siendo la barrera
+  que decide quién puede *intentar* abrir una juntada.
 - Cada juntada admite hasta 40 participantes. Como los gastos y la compra se
   dividen por cabeza, sumar gente falsa cambia lo que paga y lo que le toca
   llevar a cada uno.

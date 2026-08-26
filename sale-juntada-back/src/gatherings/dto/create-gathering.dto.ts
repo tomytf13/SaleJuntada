@@ -57,13 +57,28 @@ export class CreateGatheringDto {
   @IsLongitude()
   locationLongitude?: number;
 
-  @ApiProperty({ example: "2026-07-25T00:00:00.000Z" })
+  @ApiPropertyOptional({
+    example: "2026-08-29T00:00:00.000Z",
+    description:
+      "Fecha y hora de la juntada, cuando el grupo ya sabe cuándo es. Excluyente con windowStart/windowEnd.",
+  })
+  @IsOptional()
   @IsDateString()
-  windowStart: string;
+  startsAt?: string;
 
-  @ApiProperty({ example: "2026-07-28T00:00:00.000Z" })
+  @ApiPropertyOptional({
+    example: "2026-07-25T00:00:00.000Z",
+    description:
+      "Inicio de la ventana en la que buscar fecha. Obligatorio junto con windowEnd cuando no se manda startsAt.",
+  })
+  @IsOptional()
   @IsDateString()
-  windowEnd: string;
+  windowStart?: string;
+
+  @ApiPropertyOptional({ example: "2026-07-28T00:00:00.000Z" })
+  @IsOptional()
+  @IsDateString()
+  windowEnd?: string;
 
   @ApiPropertyOptional({ default: 180 })
   @IsOptional()

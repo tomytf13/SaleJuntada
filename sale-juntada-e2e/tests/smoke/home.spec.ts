@@ -107,7 +107,7 @@ test("crea una juntada y abre su enlace compartible", async ({ page }) => {
         availabilities: [],
       },
     ],
-    proposals: [],
+    isParticipant: true,
   };
 
   await page.route("**/api/gatherings**", async (route) => {
@@ -159,7 +159,7 @@ test("un invitado entra sin registro y guarda su disponibilidad", async ({
         availabilities: [],
       },
     ],
-    proposals: [],
+    isParticipant: true,
   };
   let savedToken = "";
   let savedSlots: unknown[] = [];
@@ -239,7 +239,7 @@ test("carga un gasto y calcula quién transfiere a quién", async ({ page }) => 
         availabilities: [],
       },
     ],
-    proposals: [],
+    isParticipant: true,
   };
   let expenseCreated = false;
   let expenseToken = "";
@@ -406,7 +406,7 @@ test("el grupo elige responsables y el organizador edita la compra", async ({
         availabilities: [],
       },
     ],
-    proposals: [],
+    isParticipant: true,
   };
   const match = {
     startsAt: "2026-07-26T00:00:00.000Z",
@@ -453,9 +453,11 @@ test("el grupo elige responsables y el organizador edita la compra", async ({
   let finalizationToken = "";
   let finalizedStart = "";
 
+  // La sesión se guarda por slug: el token tiene que viajar en el primer
+  // request, y el slug es lo único que se conoce al abrir /j/:slug.
   await page.addInitScript(() => {
     localStorage.setItem(
-      "sale-juntada:participant:gathering-purchase",
+      "sale-juntada:participant:compra-compartida-j1k2l3",
       JSON.stringify({
         participantId: "organizer-purchase",
         responseToken: "organizer-purchase-token",

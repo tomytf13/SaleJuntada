@@ -9,23 +9,24 @@ datasource db {
 }
 
 enum GatheringStatus {
-  DRAFT
+  /// Todavía no tiene fecha: el grupo la está buscando con la encuesta de
+  /// disponibilidad. En este estado el RSVP no aplica.
   OPEN
-  PROPOSED
+  /// Tiene fecha confirmada (`finalizedStart`). Recién acá existe el RSVP.
   CONFIRMED
   CANCELLED
+}
+
+enum RsvpStatus {
+  GOING
+  MAYBE
+  NOT_GOING
 }
 
 enum AvailabilityKind {
   AVAILABLE
   MAYBE
   UNAVAILABLE
-}
-
-enum ProposalStatus {
-  SUGGESTED
-  SELECTED
-  REJECTED
 }
 
 enum PurchaseCategory {
@@ -57,7 +58,6 @@ model Gathering {
   finalizedLocation     String?
   expenseRound          Int                    @default(1)
   participants          Participant[]
-  proposals             Proposal[]
   expenses              Expense[]
   transferConfirmations TransferConfirmation[]
   purchasePlan          PurchasePlan?
@@ -74,13 +74,26 @@ model Participant {
   name                  String
   contact               String?
   avatarUrl             String?
-  googleSubject         String?
   authUserId            String?
   dietaryPreferences    String[]               @default([])
   mealArrangement       String?
   paymentAlias          String?
   isOrganizer           Boolean                @default(false)
-  responseToken         String                 @unique @default(cuid())
+  /// Credencial bearer del participante. La genera la aplicación con
+  /// `generateParticipantToken()` (32 bytes de node:crypto). Sin `@default`
+  /// a propósito: `cuid()` no es criptográficamente aleatorio y este campo
+  /// autoriza gastos, transferencias y el cierre de la juntada.
+  responseToken         String                 @unique
+  /// Respuesta a la invitación. `null` significa una de dos cosas y el
+  /// `finalizedStart` de la juntada alcanza para distinguirlas: si la
+  /// juntada no tiene fecha, el RSVP no aplica; si la tiene, esta persona
+  /// todavía no respondió.
+  rsvpStatus            RsvpStatus?
+  /// Acompañantes que trae quien respondió GOING. No crean participantes:
+  /// son un número en la fila de quien los trae. Cuentan para la asistencia;
+  /// qué hacen con la división de gastos lo decide P3.
+  plusOnes              Int                    @default(0)
+  rsvpAt                DateTime?
   expensesReadyAt       DateTime?
   availabilities        Availability[]
   expensesPaid          Expense[]
@@ -92,10 +105,11 @@ model Participant {
   createdAt             DateTime               @default(now())
   updatedAt             DateTime               @updatedAt
 
-  @@unique([gatheringId, googleSubject])
   @@unique([gatheringId, authUserId])
   @@index([gatheringId])
   @@index([authUserId])
+  /// Sirve al agrupado por estado que arma el resumen de asistencia.
+  @@index([gatheringId, rsvpStatus])
 }
 
 model UserPaymentProfile {
@@ -128,9 +142,15 @@ model Expense {
   paidBy              Participant @relation(fields: [paidByParticipantId], references: [id], onDelete: Cascade)
   description         String
   amountCents         Int
+  /// Clave que envía el cliente en `Idempotency-Key`. Es obligatoria: un
+  /// reintento de red no debe poder duplicar un gasto, y una columna
+  /// opcional dejaría abierto el camino de "me olvidé de mandarla".
+  /// El único acceso concurrente seguro es el índice único de abajo.
+  idempotencyKey      String
   createdAt           DateTime    @default(now())
   updatedAt           DateTime    @updatedAt
 
+  @@unique([gatheringId, idempotencyKey])
   @@index([gatheringId, createdAt])
   @@index([paidByParticipantId])
 }
@@ -151,24 +171,6 @@ model TransferConfirmation {
   @@index([gatheringId])
   @@index([fromParticipantId])
   @@index([toParticipantId])
-}
-
-model Proposal {
-  id               String         @id @default(cuid())
-  gatheringId      String
-  gathering        Gathering      @relation(fields: [gatheringId], references: [id], onDelete: Cascade)
-  startsAt         DateTime
-  endsAt           DateTime
-  availableCount   Int
-  maybeCount       Int            @default(0)
-  unavailableCount Int            @default(0)
-  score            Float
-  explanation      String?
-  status           ProposalStatus @default(SUGGESTED)
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
-
-  @@index([gatheringId, score])
 }
 
 model PurchasePlan {

@@ -11,3 +11,4 @@
 .idea/
 .vscode/
 npm-debug.log*
+*.log
