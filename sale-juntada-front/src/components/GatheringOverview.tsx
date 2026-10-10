@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, ClipboardCheck } from "lucide-react";
 import type {
   ChecklistItem,
   ExpenseSettlement,
@@ -71,6 +71,7 @@ export function GatheringServices({
           .map(({ path, title, detail, icon: Icon }) => (
             <Link
               className="gathering-service-card"
+              data-service={path}
               to={`/j/${gathering.slug}/${path}`}
               key={path}
             >
@@ -210,13 +211,18 @@ export function GatheringHome(props: Props) {
   return (
     <>
       <Link className="gathering-my-part" to={`/j/${gathering.slug}/mi-parte`}>
-        <span>
-          <small>MI PARTE</small>
-          <strong>
-            {assigned
-              ? `${assigned} ${assigned === 1 ? "pendiente a tu cargo" : "pendientes a tu cargo"}`
-              : "Mi asistencia y responsabilidades"}
-          </strong>
+        <span className="personal-shortcut-copy">
+          <span className="personal-shortcut-icon" aria-hidden="true">
+            <ClipboardCheck size={22} />
+          </span>
+          <span>
+            <small>MI PARTE</small>
+            <strong>
+              {assigned
+                ? `${assigned} ${assigned === 1 ? "pendiente a tu cargo" : "pendientes a tu cargo"}`
+                : "Mi asistencia y responsabilidades"}
+            </strong>
+          </span>
         </span>
         <ArrowUpRight size={22} aria-hidden="true" />
       </Link>

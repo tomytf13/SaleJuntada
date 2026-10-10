@@ -11,7 +11,10 @@ export function GatheringNavigation({ gathering }: { gathering: Gathering }) {
   return (
     <>
       <aside className="gathering-sidebar">
-        <span className="section-kicker">TU JUNTADA</span>
+        <div className="sidebar-context">
+          <span className="section-kicker">TU JUNTADA</span>
+          <strong>{gathering.title}</strong>
+        </div>
         <nav aria-label="Secciones de la juntada">
           {[
             gatheringNavigation[0],

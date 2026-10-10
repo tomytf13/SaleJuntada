@@ -233,7 +233,7 @@ describe("invitación y asistencia en vivo", () => {
     expect(
       await screen.findByRole("heading", { name: "Asado de hoy", level: 1 }),
     ).toBeVisible();
-    expect(screen.getByText("📍 Yerba Buena")).toBeVisible();
+    expect(screen.getByText("Yerba Buena")).toBeVisible();
     expect(screen.getByRole("button", { name: /Aceptar invitación/i })).toBeVisible();
     expect(screen.queryByLabelText("Tu nombre")).not.toBeInTheDocument();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();

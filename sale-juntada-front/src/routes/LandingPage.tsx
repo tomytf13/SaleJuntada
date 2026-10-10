@@ -1,3 +1,13 @@
+import {
+  ArrowRight,
+  CalendarDays,
+  CheckCheck,
+  Plus,
+  ShoppingBasket,
+  Sparkles,
+  Users,
+  Wallet,
+} from "lucide-react";
 import { useState } from "react";
 import { m } from "framer-motion";
 import { SparkIcon } from "../components/SparkIcon";
@@ -7,19 +17,19 @@ import { standardTransition } from "../motion/config";
 const steps = [
   {
     number: "01",
-    icon: "＋",
+    icon: Plus,
     title: "Creás y compartís",
     detail: "Armás la juntada y mandás un solo link al grupo.",
   },
   {
     number: "02",
-    icon: "✓",
+    icon: Users,
     title: "Se organizan",
     detail: "Cada uno ingresa con su cuenta y confirma si va.",
   },
   {
     number: "03",
-    icon: "✦",
+    icon: CheckCheck,
     title: "Queda todo claro",
     detail: "Quién va, cuándo y dónde, sin perderse entre mensajes.",
   },
@@ -70,10 +80,68 @@ export default function LandingPage() {
               type="button"
               onClick={() => setShowCreate(true)}
             >
-              Crear una juntada <span aria-hidden="true">→</span>
+              Crear una juntada <ArrowRight size={18} aria-hidden="true" />
             </button>
           </div>
         </m.div>
+        <aside
+          className="landing-plan"
+          aria-label="Todo lo que podés organizar"
+        >
+          <div className="plan-topline">
+            <span className="section-kicker">
+              MENOS MENSAJES. MÁS ENCUENTROS.
+            </span>
+            <Sparkles size={20} aria-hidden="true" />
+          </div>
+          <h2>
+            Un buen plan.
+            <br />
+            <em>Todo en su lugar.</em>
+          </h2>
+          <div className="plan-features">
+            {[
+              {
+                icon: Users,
+                title: "La gente",
+                detail: "Invitaciones y asistencia",
+                tone: "invitados",
+              },
+              {
+                icon: CalendarDays,
+                title: "El encuentro",
+                detail: "Fecha y lugar",
+                tone: "fecha",
+              },
+              {
+                icon: ShoppingBasket,
+                title: "La mesa",
+                detail: "Qué lleva cada uno",
+                tone: "compra",
+              },
+              {
+                icon: Wallet,
+                title: "Las cuentas",
+                detail: "Gastos y transferencias",
+                tone: "cuentas",
+              },
+            ].map(({ icon: Icon, title, detail, tone }) => (
+              <div className="plan-feature" data-service={tone} key={title}>
+                <span className="service-icon">
+                  <Icon size={21} aria-hidden="true" />
+                </span>
+                <div>
+                  <strong>{title}</strong>
+                  <span>{detail}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="plan-footnote">
+            <CheckCheck size={17} aria-hidden="true" />
+            Un solo lugar para organizarse entre todos.
+          </p>
+        </aside>
       </section>
 
       <m.section
@@ -86,12 +154,14 @@ export default function LandingPage() {
         <span className="section-kicker">ASÍ DE SIMPLE</span>
         <h2>Del "vemos" al "nos vemos".</h2>
         <div className="steps-grid">
-          {steps.map((step) => (
-            <article key={step.number}>
-              <span>{step.number}</span>
-              <div className="step-icon">{step.icon}</div>
-              <h3>{step.title}</h3>
-              <p>{step.detail}</p>
+          {steps.map(({ number, icon: Icon, title, detail }) => (
+            <article key={number}>
+              <span>{number}</span>
+              <div className="step-icon">
+                <Icon size={25} aria-hidden="true" />
+              </div>
+              <h3>{title}</h3>
+              <p>{detail}</p>
             </article>
           ))}
         </div>
@@ -108,7 +178,10 @@ export default function LandingPage() {
         <span>Argentina · 2026</span>
       </footer>
 
-      <CreateGatheringDialog open={showCreate} onClose={() => setShowCreate(false)} />
+      <CreateGatheringDialog
+        open={showCreate}
+        onClose={() => setShowCreate(false)}
+      />
     </main>
   );
 }
