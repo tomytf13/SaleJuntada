@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState } from "react";
 import { AnimatedDialog } from "./AnimatedDialog";
 import { useAuth } from "../auth/useAuth";
 import {
@@ -31,12 +31,9 @@ export function AccountDialog({
     user,
     accessToken,
     signInWithGoogle,
-    signInWithEmail,
     signOut,
   } = useAuth();
-  const [email, setEmail] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [emailSent, setEmailSent] = useState(false);
   const [error, setError] = useState("");
   const [history, setHistory] = useState<GatheringHistoryItem[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
@@ -88,16 +85,6 @@ export function AccountDialog({
     } finally {
       setIsSubmitting(false);
     }
-  };
-
-  const submitEmail = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const normalizedEmail = email.trim().toLowerCase();
-    if (!normalizedEmail) return;
-    void run(async () => {
-      await signInWithEmail(normalizedEmail);
-      setEmailSent(true);
-    });
   };
 
   const deleteGathering = async (gathering: GatheringHistoryItem) => {
@@ -245,7 +232,7 @@ export function AccountDialog({
           <span className="eyebrow">Tu perfil, en cualquier dispositivo</span>
           <h2>Ingresá a Sale Juntada</h2>
           <p>
-            Ingresá con tu cuenta para crear juntadas, aceptar invitaciones y confirmar tu asistencia.
+            Ingresá con Google para crear juntadas, aceptar invitaciones y confirmar tu asistencia.
           </p>
 
           {!configured ? (
@@ -264,29 +251,6 @@ export function AccountDialog({
                 Continuar con Google
               </button>
 
-              <div className="join-divider"><span>o con tu email</span></div>
-
-              {emailSent ? (
-                <div className="account-success" role="status">
-                  Te enviamos un enlace a <strong>{email}</strong>. Abrilo para ingresar.
-                </div>
-              ) : (
-                <form className="account-email-form" onSubmit={submitEmail}>
-                  <label htmlFor="account-email">Email</label>
-                  <input
-                    id="account-email"
-                    type="email"
-                    autoComplete="email"
-                    required
-                    placeholder="vos@ejemplo.com"
-                    value={email}
-                    onChange={(event) => setEmail(event.target.value)}
-                  />
-                  <button className="primary-button full" disabled={isSubmitting}>
-                    {isSubmitting ? "Enviando…" : "Enviarme un enlace mágico"}
-                  </button>
-                </form>
-              )}
             </>
           )}
 

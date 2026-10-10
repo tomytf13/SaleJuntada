@@ -63,19 +63,6 @@ describe("AccountDialog", () => {
     await waitFor(() => expect(auth.value.signInWithGoogle).toHaveBeenCalledOnce());
   });
 
-  it("envía el magic link y confirma el destino", async () => {
-    renderDialog();
-    fireEvent.change(screen.getByLabelText("Email"), {
-      target: { value: "Amiga@Ejemplo.com" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: /enviarme un enlace/i }));
-
-    await waitFor(() => {
-      expect(auth.value.signInWithEmail).toHaveBeenCalledWith("amiga@ejemplo.com");
-    });
-    expect(await screen.findByText(/te enviamos un enlace/i)).toBeInTheDocument();
-  });
-
   it("muestra la sesión activa y permite cerrarla", async () => {
     auth.value.user = {
       email: "tomy@example.com",
