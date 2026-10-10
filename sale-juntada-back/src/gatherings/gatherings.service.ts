@@ -757,6 +757,24 @@ export class GatheringsService {
       dailyEndMinutes,
     });
 
+    const fixed = dto.fixedSchedule === true;
+    if (
+      fixed &&
+      windowEnd.getTime() - windowStart.getTime() !== durationMinutes * 60_000
+    ) {
+      throw new BadRequestException(
+        "La duración debe coincidir con el inicio y fin del horario fijo",
+      );
+    }
+    const fixedDateChanged =
+      fixed &&
+      (current.status !== GatheringStatus.CONFIRMED ||
+        current.finalizedStart?.getTime() !== windowStart.getTime() ||
+        current.finalizedEnd?.getTime() !== windowEnd.getTime());
+    const reopen =
+      dto.fixedSchedule === false &&
+      current.status === GatheringStatus.CONFIRMED;
+
     const scheduleChanged =
       windowStart.getTime() !== current.windowStart.getTime() ||
       windowEnd.getTime() !== current.windowEnd.getTime() ||
@@ -769,15 +787,23 @@ export class GatheringsService {
       dto.locationHint !== undefined && locationHint !== current.locationHint;
 
     await this.prisma.$transaction(async (transaction) => {
-      if (scheduleChanged) {
+      if (scheduleChanged || fixedDateChanged || reopen) {
         await transaction.availability.deleteMany({
           where: { participant: { gatheringId } },
         });
-        // Cambiar el cronograma devuelve la juntada a "buscando fecha", y
-        // sin fecha el RSVP no aplica para nadie. Se resetea a todos,
-        // incluido quien organiza, en la misma transacción que el cambio de
-        // estado.
-        await this.rsvpService.resetForOpenScheduling(transaction, gatheringId);
+        // El horario y las respuestas se actualizan en la misma transacción.
+        // Un horario fijo habilita RSVP; una búsqueda vuelve a disponibilidad.
+        if (fixed && fixedDateChanged) {
+          await this.rsvpService.resetForConfirmedDate(
+            transaction,
+            gatheringId,
+          );
+        } else if (!fixed) {
+          await this.rsvpService.resetForOpenScheduling(
+            transaction,
+            gatheringId,
+          );
+        }
       }
       await transaction.gathering.update({
         where: { id: gatheringId },
@@ -795,14 +821,24 @@ export class GatheringsService {
           dailyStartMinutes,
           dailyEndMinutes,
           slotStepMinutes,
-          ...(scheduleChanged
+          ...(fixed
             ? {
-                status: GatheringStatus.OPEN,
-                finalizedStart: null,
-                finalizedEnd: null,
-                finalizedLocation: null,
+                status: GatheringStatus.CONFIRMED,
+                finalizedStart: windowStart,
+                finalizedEnd: windowEnd,
+                finalizedLocation:
+                  dto.locationHint === undefined
+                    ? (current.finalizedLocation ?? current.locationHint)
+                    : locationHint || null,
               }
-            : {}),
+            : scheduleChanged || reopen
+              ? {
+                  status: GatheringStatus.OPEN,
+                  finalizedStart: null,
+                  finalizedEnd: null,
+                  finalizedLocation: null,
+                }
+              : {}),
         },
       });
     });
