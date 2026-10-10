@@ -625,6 +625,13 @@ export const gatheringService = {
     );
   },
 
+  updateAvatar(gatheringId: string, participantId: string, token: string, avatarUrl: string) {
+    return request<Pick<Participant, "id" | "name" | "avatarUrl">>(
+      `/gatherings/${gatheringId}/participants/${participantId}/avatar`,
+      { method: "PUT", headers: { "x-participant-token": token }, body: JSON.stringify({ avatarUrl }) },
+    );
+  },
+
   updateDietaryProfile(
     gatheringId: string,
     participantId: string,

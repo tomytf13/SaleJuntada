@@ -1,3 +1,4 @@
+import { UpdateAvatarDto } from "./dto/update-avatar.dto";
 import {
   lockGatheringServices,
   withActiveGatheringService,
@@ -1054,6 +1055,15 @@ export class GatheringsService {
       })
       .sort((a, b) => b.score - a.score)
       .slice(0, 5);
+  }
+
+  async updateAvatar(gatheringId: string, participantId: string, participantToken: string | undefined, dto: UpdateAvatarDto) {
+    await this.participantAuth.requireParticipant(gatheringId, participantId, participantToken);
+    return this.prisma.participant.update({
+      where: { id: participantId },
+      data: { avatarUrl: dto.avatarUrl },
+      select: { id: true, name: true, avatarUrl: true },
+    });
   }
 
   async updateDietaryProfile(

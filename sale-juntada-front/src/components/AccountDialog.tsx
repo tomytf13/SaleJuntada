@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { AnimatedDialog } from "./AnimatedDialog";
 import { useAuth } from "../auth/useAuth";
 import {
@@ -18,7 +18,9 @@ export function AccountDialog({
   onClose,
   onOpenGathering,
   onDuplicateGathering,
+  profileEditor,
 }: {
+  profileEditor?: ReactNode;
   open: boolean;
   onClose(): void;
   onOpenGathering?(gathering: GatheringHistoryItem): void;
@@ -143,6 +145,7 @@ export function AccountDialog({
           <div className="account-success" role="status">
             Tu cuenta está lista. Las nuevas juntadas quedan vinculadas a este perfil.
           </div>
+          {profileEditor}
           <section className="account-history" aria-labelledby="account-history-title">
             <div className="account-history-heading">
               <div>

@@ -1,3 +1,4 @@
+import { ParticipantProfileEditor } from "../components/ParticipantProfileEditor";
 import { GatheringDatePlace } from "../components/GatheringDatePlace";
 import { PublicInvitation } from "./PublicInvitation";
 import { normalizeContactPhone } from "../utils/phone";
@@ -603,6 +604,9 @@ function GatheringWorkspace() {
     socket.on("participants:changed", () => {
       refreshSocial();
       refreshMatches();
+      void refreshExpenses().catch(() => {});
+      setPurchaseRevision((current) => current + 1);
+      void queryClient.invalidateQueries({ queryKey: checklistKey(activeGatheringId, sessionResponseToken), exact: true });
     });
     socket.on("availability:changed", () => {
       refreshSocial();
@@ -1223,6 +1227,20 @@ function GatheringWorkspace() {
   const currentParticipant = authorizedSession && activeGathering?.participants.find(
     (participant) => participant.id === participantSession?.participantId,
   );
+  const profileEditor = currentParticipant && participantSession && activeGathering ? (
+    <ParticipantProfileEditor
+      key={`${currentParticipant.id}:${currentParticipant.avatarUrl}`}
+      gatheringId={activeGathering.id}
+      participant={currentParticipant}
+      token={participantSession.responseToken}
+      googlePhoto={authAvatarUrl}
+      onSaved={(avatarUrl) => {
+        showNotice("Tu avatar quedó guardado.");
+        setActiveGathering(current => current ? { ...current, participants: current.participants.map(person => person.id === currentParticipant.id ? { ...person, avatarUrl } : person) } : current);
+      }}
+    />
+  ) : null;
+
   const currentParticipantExpensesReady =
     expenseSettlement?.readyParticipants.some(
       (participant) => participant.participantId === currentParticipant?.id,
@@ -1412,7 +1430,9 @@ function GatheringWorkspace() {
             type="button"
             onClick={() => setShowAccount(true)}
           >
-            {authAvatarUrl ? (
+            {currentParticipant ? (
+              <ParticipantAvatar name={currentParticipant.name} avatarUrl={currentParticipant.avatarUrl} />
+            ) : authAvatarUrl ? (
               <img src={authAvatarUrl} alt="" />
             ) : user ? (
               initials(authName)
@@ -1584,7 +1604,7 @@ function GatheringWorkspace() {
               )
             ) : null}
             {overviewProps && view === "mi-parte" ? (
-              <GatheringPersonalTasks {...overviewProps} />
+              <div>{profileEditor}<GatheringPersonalTasks {...overviewProps} /></div>
             ) : null}
 
             {currentParticipant && view === "fecha" ? (
@@ -2561,6 +2581,7 @@ function GatheringWorkspace() {
       </AnimatedDialog>
 
       <AccountDialog
+        profileEditor={profileEditor}
         open={showAccount}
         onClose={() => setShowAccount(false)}
         onOpenGathering={openGatheringFromHistory}

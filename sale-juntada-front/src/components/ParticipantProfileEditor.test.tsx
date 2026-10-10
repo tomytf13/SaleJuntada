@@ -1,0 +1,36 @@
+import "@testing-library/jest-dom/vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, expect, it, vi } from "vitest";
+import { ParticipantProfileEditor } from "./ParticipantProfileEditor";
+import type { Participant } from "../services/gatheringService";
+const mocks = vi.hoisted(() => ({ update: vi.fn(), thumbnail: vi.fn() }));
+vi.mock("../services/gatheringService", () => ({ gatheringService: { updateAvatar: mocks.update } }));
+vi.mock("../utils/gatheringHelpers", async importOriginal => ({ ...await importOriginal<object>(), makeAvatarThumbnail: mocks.thumbnail }));
+afterEach(() => { cleanup(); vi.resetAllMocks(); });
+const participant = { id: "p", name: "Sofi", avatarUrl: "emoji:🦆", isOrganizer: false } as Participant;
+it("previews an icon and saves it using the participant credential", async () => {
+  mocks.update.mockResolvedValue({ avatarUrl: "emoji:🥳" });
+  const onSaved = vi.fn();
+  render(<ParticipantProfileEditor gatheringId="g" participant={participant} token="my-token" onSaved={onSaved} />);
+  fireEvent.click(screen.getByRole("button", { name: "Usar 🥳 como avatar" }));
+  expect(screen.getByLabelText("Avatar de Sofi")).toHaveTextContent("🥳");
+  fireEvent.click(screen.getByRole("button", { name: "Guardar avatar" }));
+  await waitFor(() => expect(onSaved).toHaveBeenCalledWith("emoji:🥳"));
+  expect(mocks.update).toHaveBeenCalledWith("g", "p", "my-token", "emoji:🥳");
+});
+it("compresses a selected photo and preserves it when saving fails", async () => {
+  const photo = "data:image/jpeg;base64,YWJj";
+  mocks.thumbnail.mockResolvedValue(photo);
+  mocks.update.mockRejectedValue(new Error("Sin conexión"));
+  const onSaved = vi.fn();
+  render(<ParticipantProfileEditor gatheringId="g" participant={participant} token="my-token" onSaved={onSaved} />);
+  const file = new File(["test"], "foto.png", { type: "image/png" });
+  fireEvent.change(screen.getByLabelText(/Subir una imagen/), { target: { files: [file] } });
+  await waitFor(() => expect(screen.getByRole("button", { name: "Guardar avatar" })).toBeEnabled());
+  expect(mocks.thumbnail).toHaveBeenCalledWith(file);
+  expect(screen.getByAltText("Avatar de Sofi")).toHaveAttribute("src", photo);
+  fireEvent.click(screen.getByRole("button", { name: "Guardar avatar" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Sin conexión");
+  expect(onSaved).not.toHaveBeenCalled();
+  expect(screen.getByAltText("Avatar de Sofi")).toHaveAttribute("src", photo);
+});
