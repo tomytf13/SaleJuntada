@@ -1,3 +1,4 @@
+import { Transform } from "class-transformer";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import {
   IsBoolean,
@@ -17,7 +18,16 @@ export class AddParticipantDto {
 
   @ApiPropertyOptional({ example: "+549381..." })
   @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === "string"
+      ? value.replace(/[\s()-]/g, "") || undefined
+      : value,
+  )
   @IsString()
+  @Matches(/^\+[1-9]\d{7,14}$/, {
+    message:
+      "Ingresá el teléfono con código de país, por ejemplo +54 9 381 123 4567",
+  })
   contact?: string;
 
   @ApiPropertyOptional({ example: "emoji:🦆" })

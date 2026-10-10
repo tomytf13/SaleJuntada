@@ -775,6 +775,11 @@ function GatheringWorkspace() {
     if (!activeGathering) return;
     const form = new FormData(event.currentTarget);
     const name = String(form.get("participantName") || "").trim();
+    const contact = String(form.get("participantPhone") || "").replace(/[\s()-]/g, "");
+    if (contact && !/^\+[1-9]\d{7,14}$/.test(contact)) {
+      setApiError("Ingresá el teléfono con código de país, por ejemplo +54 9 381 123 4567.");
+      return;
+    }
     // Si ya hubo un choque de nombre y la persona confirmó que no es ella,
     // insistimos con el mismo nombre en vez de volver a frenarla.
     const allowDuplicateName = duplicateNameWarning === name;
@@ -782,12 +787,19 @@ function GatheringWorkspace() {
     setIsSubmitting(true);
     setApiError("");
     try {
-      const participant = await gatheringService.addParticipant(
-        activeGathering.id,
-        name,
-        "emoji:🦆",
-        allowDuplicateName,
-      );
+      const participant = accessToken
+        ? await gatheringService.addAuthenticatedParticipant(
+            activeGathering.id,
+            accessToken,
+            { name, contact: contact || undefined },
+          )
+        : await gatheringService.addParticipant(
+            activeGathering.id,
+            name,
+            "emoji:🦆",
+            allowDuplicateName,
+            contact || undefined,
+          );
       if (!participant.responseToken) {
         throw new Error("No pudimos crear tu acceso a la juntada.");
       }
@@ -817,7 +829,8 @@ function GatheringWorkspace() {
       if (
         error instanceof ApiError &&
         error.status === 400 &&
-        !allowDuplicateName
+        !allowDuplicateName &&
+        !accessToken
       ) {
         setDuplicateNameWarning(name);
       }
@@ -1431,6 +1444,7 @@ function GatheringWorkspace() {
           {!currentParticipant && activeGathering.status !== "CANCELLED" ? (
             <JoinGathering
               open={showJoin}
+              defaultName={user ? authName : undefined}
               isSubmitting={isSubmitting}
               warning={duplicateNameWarning}
               error={apiError}
