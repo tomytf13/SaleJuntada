@@ -1,3 +1,4 @@
+import { normalizeContactPhone } from "../utils/phone";
 import { GatheringServiceSettings } from "../components/GatheringServiceSettings";
 import {
   FormEvent,
@@ -775,9 +776,14 @@ function GatheringWorkspace() {
     if (!activeGathering) return;
     const form = new FormData(event.currentTarget);
     const name = String(form.get("participantName") || "").trim();
-    const contact = String(form.get("participantPhone") || "").replace(/[\s()-]/g, "");
-    if (contact && !/^\+[1-9]\d{7,14}$/.test(contact)) {
-      setApiError("Ingresá el teléfono con código de país, por ejemplo +54 9 381 123 4567.");
+    let contact: string | undefined;
+    try {
+      contact = normalizeContactPhone(
+        String(form.get("participantPhone") || ""),
+        String(form.get("participantPhoneCountry") || "AR"),
+      );
+    } catch (error) {
+      setApiError(error instanceof Error ? error.message : "Revisá el número de teléfono.");
       return;
     }
     // Si ya hubo un choque de nombre y la persona confirmó que no es ella,

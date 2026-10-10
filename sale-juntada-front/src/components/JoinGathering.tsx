@@ -1,4 +1,5 @@
 import type { FormEvent } from "react";
+import { PhoneContactField } from "./PhoneContactField";
 
 type Props = {
   open: boolean;
@@ -41,22 +42,7 @@ export function JoinGathering({
             required
             disabled={isSubmitting}
           />
-          <label htmlFor="participant-phone">Teléfono de contacto (opcional)</label>
-          <input
-            id="participant-phone"
-            name="participantPhone"
-            type="tel"
-            autoComplete="tel"
-            placeholder="+54 9 381 123 4567"
-            maxLength={32}
-            aria-describedby="participant-phone-help"
-            disabled={isSubmitting}
-          />
-          <p id="participant-phone-help">
-            Incluí el código de país. Lo guardamos como contacto para futuras
-            funciones de WhatsApp; no se muestra a otros invitados ni se envían
-            mensajes ahora. El número no se verifica por SMS.
-          </p>
+          <PhoneContactField disabled={isSubmitting} />
           {warning ? (
             <div className="duplicate-warning" role="alert">
               <strong>Ya hay alguien con ese nombre</strong>
