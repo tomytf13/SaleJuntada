@@ -84,6 +84,7 @@ export function GatheringServiceSettings({
           return (
             <div
               className={`service-settings-row ${enabled ? "" : "archived"}`}
+              data-service={path}
               key={path}
             >
               <span className="service-icon">

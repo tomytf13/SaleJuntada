@@ -7,6 +7,7 @@ import { MotionProvider } from "./motion/MotionProvider";
 import { AuthProvider } from "./auth/AuthContext";
 import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import "./index.css";
+import "./premium.css";
 
 const queryClient = new QueryClient({
   defaultOptions: {
