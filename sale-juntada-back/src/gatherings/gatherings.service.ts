@@ -2285,6 +2285,11 @@ export class GatheringsService {
       "No podés vincular otra participación",
     );
 
+    if (participant.authUserId && participant.authUserId !== identity.id) {
+      throw new ForbiddenException(
+        "Este acceso ya está vinculado a otra cuenta",
+      );
+    }
     const paymentProfile = await this.prisma.userPaymentProfile.findUnique({
       where: { authUserId: identity.id },
       select: { paymentAlias: true },
@@ -2306,14 +2311,20 @@ export class GatheringsService {
       });
     }
 
-    return this.prisma.participant.update({
-      where: { id: participant.id },
+    const linked = await this.prisma.participant.updateMany({
+      where: { id: participant.id, authUserId: null },
       data: {
         authUserId: identity.id,
         contact: participant.contact ?? identity.email,
         paymentAlias: participant.paymentAlias ?? paymentProfile?.paymentAlias,
       },
     });
+    const result = await this.prisma.participant.findUniqueOrThrow({
+      where: { id: participant.id },
+    });
+    if (!linked.count && result.authUserId !== identity.id)
+      throw new ConflictException("El acceso cambió. Volvé a ingresar.");
+    return result;
   }
 
   private slugify(value: string) {

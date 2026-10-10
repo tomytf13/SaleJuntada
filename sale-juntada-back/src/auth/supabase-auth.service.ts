@@ -9,6 +9,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 export type AuthIdentity = {
   id: string;
   email: string | null;
+  expiresAt?: number;
 };
 
 @Injectable()
@@ -33,7 +34,9 @@ export class SupabaseAuthService {
         : null;
   }
 
-  async requireIdentity(authorization: string | undefined): Promise<AuthIdentity> {
+  async requireIdentity(
+    authorization: string | undefined,
+  ): Promise<AuthIdentity> {
     if (!this.client) {
       throw new ServiceUnavailableException(
         "El acceso con Supabase todavía no está configurado",
@@ -43,14 +46,21 @@ export class SupabaseAuthService {
     const token = this.readBearerToken(authorization);
     const { data, error } = await this.client.auth.getClaims(token);
     const subject = data?.claims?.sub;
-    if (error || typeof subject !== "string" || !subject) {
+    if (
+      error ||
+      typeof subject !== "string" ||
+      !subject ||
+      data?.claims?.is_anonymous === true
+    ) {
       throw new UnauthorizedException("Tu sesión venció. Volvé a ingresar");
     }
 
     return {
       id: subject,
-      email:
-        typeof data.claims.email === "string" ? data.claims.email : null,
+      ...(typeof data.claims.exp === "number"
+        ? { expiresAt: data.claims.exp }
+        : {}),
+      email: typeof data.claims.email === "string" ? data.claims.email : null,
     };
   }
 

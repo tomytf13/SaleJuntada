@@ -1,3 +1,4 @@
+import { PublicInvitation } from "./PublicInvitation";
 import { normalizeContactPhone } from "../utils/phone";
 import { GatheringServiceSettings } from "../components/GatheringServiceSettings";
 import {
@@ -91,6 +92,15 @@ const PartyGames = lazy(() =>
 );
 
 export default function GatheringPage() {
+  const { user, accessToken, isLoading } = useAuth();
+  const { slug } = useParams();
+  if (isLoading) return <GatheringSkeleton />;
+  return user && accessToken
+    ? <AccountGathering key={`${slug}:${user.id}`} />
+    : <PublicInvitation />;
+}
+
+function AccountGathering() {
   const [drafts] = useState(() => new Map<string, unknown>());
   return (
     <GatheringDraftContext.Provider value={drafts}>
@@ -130,13 +140,14 @@ function GatheringWorkspace() {
   const [showAccount, setShowAccount] = useState(false);
   const [participantSession, setParticipantSession] =
     useState<ParticipantSession | null>(() => readParticipantSession(slug));
-  const gatheringQuery = useGathering(slug, participantSession?.responseToken);
+  const [authorizedSession, setAuthorizedSession] = useState<ParticipantSession | null>(null);
+  const gatheringQuery = useGathering(slug, authorizedSession?.responseToken);
   const {
     gathering: activeGathering,
     setGathering: setActiveGathering,
     refresh: refreshGathering,
   } = gatheringQuery;
-  const rsvp = useRsvp(slug, activeGathering?.id, participantSession);
+  const rsvp = useRsvp(slug, activeGathering?.id, authorizedSession);
   const eventName = activeGathering?.title ?? "";
   const location =
     activeGathering?.finalizedLocation ??
@@ -324,7 +335,7 @@ function GatheringWorkspace() {
   const activeGatheringId = activeGathering?.id;
   const sessionParticipantId = participantSession?.participantId;
   const sessionResponseToken = participantSession?.responseToken;
-  const isParticipant = Boolean(activeGathering?.isParticipant);
+  const isParticipant = Boolean(authorizedSession && activeGathering?.isParticipant);
   const checklistQuery = useQuery({
     queryKey: checklistKey(activeGatheringId ?? "", sessionResponseToken ?? ""),
     queryFn: () =>
@@ -398,14 +409,24 @@ function GatheringWorkspace() {
         sessionResponseToken,
         accessToken,
       )
+      .then((participant) => {
+        if (!participant.responseToken) return;
+        const session = { participantId: participant.id, responseToken: participant.responseToken };
+        storeParticipantSession(slug, session.participantId, session.responseToken);
+        setAuthorizedSession(session);
+        if (session.participantId !== sessionParticipantId || session.responseToken !== sessionResponseToken) setParticipantSession(session);
+      })
       .catch(() => {
-        // La vinculación mejora la recuperación, pero no debe interrumpir la juntada.
+        setAuthorizedSession(null);
+        setParticipantSession(null);
+        setApiError("Ingresá desde Mis juntadas para recuperar tu participación, o aceptá la invitación con esta cuenta.");
       });
   }, [
     accessToken,
     activeGatheringId,
     sessionParticipantId,
     sessionResponseToken,
+    slug,
   ]);
 
   useEffect(() => {
@@ -466,6 +487,7 @@ function GatheringWorkspace() {
       );
 
     const socket = io(SOCKET_URL, {
+      auth: { accessToken },
       transports: ["websocket", "polling"],
       autoConnect: false,
     });
@@ -646,6 +668,7 @@ function GatheringWorkspace() {
       setIsLiveConnected(false);
     };
   }, [
+    accessToken,
     activeGatheringId,
     sessionParticipantId,
     sessionResponseToken,
@@ -793,19 +816,12 @@ function GatheringWorkspace() {
     setIsSubmitting(true);
     setApiError("");
     try {
-      const participant = accessToken
-        ? await gatheringService.addAuthenticatedParticipant(
-            activeGathering.id,
-            accessToken,
-            { name, contact: contact || undefined },
-          )
-        : await gatheringService.addParticipant(
-            activeGathering.id,
-            name,
-            "emoji:🦆",
-            allowDuplicateName,
-            contact || undefined,
-          );
+      if (!accessToken) throw new Error("Ingresá a tu cuenta para aceptar la invitación.");
+      const participant = await gatheringService.addAuthenticatedParticipant(
+        activeGathering.id,
+        accessToken,
+        { name, contact: contact || undefined },
+      );
       if (!participant.responseToken) {
         throw new Error("No pudimos crear tu acceso a la juntada.");
       }
@@ -819,6 +835,7 @@ function GatheringWorkspace() {
         session.responseToken,
       );
       setParticipantSession(session);
+      setAuthorizedSession(session);
       setAvailabilitySelection([]);
       setShowJoin(false);
       if (!view && activeGathering.status === "OPEN")
@@ -1202,7 +1219,7 @@ function GatheringWorkspace() {
     }
   };
 
-  const currentParticipant = activeGathering?.participants.find(
+  const currentParticipant = authorizedSession && activeGathering?.participants.find(
     (participant) => participant.id === participantSession?.participantId,
   );
   const currentParticipantExpensesReady =

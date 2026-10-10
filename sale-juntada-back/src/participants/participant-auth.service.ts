@@ -119,11 +119,19 @@ export class ParticipantAuthService {
    * pública de la juntada y el socket, donde no tener credencial es un caso
    * esperado y no un error.
    */
-  async findByToken(gatheringId: string, token: string | undefined) {
+  async findByToken(
+    gatheringId: string,
+    token: string | undefined,
+    authUserId?: string,
+  ) {
     if (!token) return null;
 
     const participant = await this.prisma.participant.findFirst({
-      where: { gatheringId, responseToken: token },
+      where: {
+        gatheringId,
+        responseToken: token,
+        ...(authUserId ? { authUserId } : {}),
+      },
       select: { id: true, name: true, isOrganizer: true, responseToken: true },
     });
     if (!participant) return null;
@@ -132,6 +140,10 @@ export class ParticipantAuthService {
     // proyecto y evita que este camino se desincronice del resto.
     if (!participantTokenMatches(token, participant.responseToken)) return null;
 
-    return { id: participant.id, name: participant.name, isOrganizer: participant.isOrganizer };
+    return {
+      id: participant.id,
+      name: participant.name,
+      isOrganizer: participant.isOrganizer,
+    };
   }
 }

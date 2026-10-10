@@ -1,3 +1,4 @@
+import { SupabaseAuthService } from "../auth/supabase-auth.service";
 import {
   OnGatewayDisconnect,
   SubscribeMessage,
@@ -39,7 +40,15 @@ export class GatheringsGateway implements OnGatewayDisconnect {
 
   private readonly members = new Map<string, LiveMember>();
 
-  constructor(private readonly participantAuth: ParticipantAuthService) {}
+  constructor(
+    private readonly participantAuth: ParticipantAuthService,
+    private readonly accountAuth: SupabaseAuthService,
+  ) {}
+
+  private readonly expirationTimers = new Map<
+    string,
+    ReturnType<typeof setTimeout>
+  >();
 
   /**
    * Suscribe el socket a los eventos de la juntada.
@@ -52,7 +61,7 @@ export class GatheringsGateway implements OnGatewayDisconnect {
    */
   @SubscribeMessage("gathering:watch")
   async watch(client: Socket, payload: WatchPayload) {
-    const member = await this.authorize(payload);
+    const member = await this.authorize(client, payload);
     if (!member) return;
     await client.join(this.room(member.gatheringId));
     this.broadcastPresence(member.gatheringId);
@@ -61,7 +70,7 @@ export class GatheringsGateway implements OnGatewayDisconnect {
   /** Igual que `watch`, y además publica la presencia de esta persona. */
   @SubscribeMessage("gathering:join")
   async join(client: Socket, payload: WatchPayload) {
-    const member = await this.authorize(payload);
+    const member = await this.authorize(client, payload);
     if (!member) return { joined: false };
     this.members.set(client.id, member);
     await client.join(this.room(member.gatheringId));
@@ -81,12 +90,36 @@ export class GatheringsGateway implements OnGatewayDisconnect {
     this.server.to(this.room(gatheringId)).emit("checklist:changed");
   }
 
-  private async authorize(payload: WatchPayload): Promise<LiveMember | null> {
+  private async authorize(
+    client: Socket,
+    payload: WatchPayload,
+  ): Promise<LiveMember | null> {
     if (!payload?.gatheringId || !payload.participantToken) return null;
 
+    let identity;
+    try {
+      const accessToken: unknown = client.handshake?.auth?.accessToken;
+      if (typeof accessToken !== "string") return null;
+      identity = await this.accountAuth.requireIdentity(
+        `Bearer ${accessToken}`,
+      );
+    } catch {
+      client.disconnect(true);
+      return null;
+    }
+    if (identity.expiresAt) {
+      clearTimeout(this.expirationTimers.get(client.id));
+      const timer = setTimeout(
+        () => client.disconnect(true),
+        Math.max(0, identity.expiresAt * 1000 - Date.now()),
+      );
+      timer.unref();
+      this.expirationTimers.set(client.id, timer);
+    }
     const participant = await this.participantAuth.findByToken(
       payload.gatheringId,
       payload.participantToken,
+      identity.id,
     );
     if (!participant) return null;
     // El cliente manda `participantId` además del token; si no coinciden es
@@ -135,6 +168,8 @@ export class GatheringsGateway implements OnGatewayDisconnect {
   }
 
   handleDisconnect(client: Socket) {
+    clearTimeout(this.expirationTimers.get(client.id));
+    this.expirationTimers.delete(client.id);
     const member = this.members.get(client.id);
     this.members.delete(client.id);
     if (member) this.broadcastPresence(member.gatheringId);
@@ -191,12 +226,7 @@ export class GatheringsGateway implements OnGatewayDisconnect {
     gatheringId: string,
     activity?: {
       action:
-        | "claim"
-        | "release"
-        | "ready"
-        | "pending"
-        | "contribute"
-        | "remove";
+        "claim" | "release" | "ready" | "pending" | "contribute" | "remove";
       itemKey: string;
       itemLabel: string;
       participantId: string;

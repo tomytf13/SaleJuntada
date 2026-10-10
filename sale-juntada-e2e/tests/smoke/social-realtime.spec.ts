@@ -1,3 +1,4 @@
+import { realAccount, realAccountsConfigured } from "../helpers/account";
 import { expect, test } from "@playwright/test";
 
 const api = process.env.E2E_API_URL ?? "http://127.0.0.1:3001/api";
@@ -8,10 +9,12 @@ test("dos invitados ven asistencia, acompañantes y necesidades en tiempo real",
   request,
 }) => {
   test.skip(
-    process.env.E2E_REAL_DB !== "1",
+    process.env.E2E_REAL_DB !== "1" || !realAccountsConfigured,
     "Requiere API y PostgreSQL local con migraciones aplicadas.",
   );
+  await realAccount(page);
   const response = await request.post(`${api}/gatherings`, {
+    headers: { Authorization: `Bearer ${process.env.E2E_AUTH_TOKEN}` },
     data: {
       title: "Asado de prueba en vivo",
       organizerName: "Tomy",
@@ -48,6 +51,7 @@ test("dos invitados ven asistencia, acompañantes y necesidades en tiempo real",
     viewport: page.viewportSize() ?? undefined,
   });
   const guest = await guestContext.newPage();
+  await realAccount(guest, process.env.E2E_FRIEND_AUTH_TOKEN);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   guest.on("pageerror", (error) => errors.push(error.message));
@@ -58,7 +62,7 @@ test("dos invitados ven asistencia, acompañantes y necesidades en tiempo real",
     ).toBeVisible();
     await expect(guest.getByRole("radiogroup")).toHaveCount(0);
     await expect(guest.getByText("Tomy", { exact: true })).toHaveCount(0);
-    await guest.getByRole("button", { name: /sumarme/i }).click();
+    await guest.getByRole("button", { name: /Aceptar invitación/i }).click();
     await guest.getByLabel("Tu nombre").fill("Sofi");
     await guest.getByRole("button", { name: "Entrar y responder" }).click();
     await expect(guest.locator(".connection-status")).toBeVisible();
@@ -135,7 +139,7 @@ test("dos invitados ven asistencia, acompañantes y necesidades en tiempo real",
     ).toBe(401);
     const cancelled = await request.delete(
       `${api}/gatherings/${gathering.id}/participants/${organizer.id}/settings`,
-      { headers: { "x-participant-token": organizer.responseToken } },
+      { headers: { "x-participant-token": organizer.responseToken, Authorization: `Bearer ${process.env.E2E_AUTH_TOKEN}` } },
     );
     expect(cancelled.ok()).toBeTruthy();
     await expect(guest.getByText(/Esta juntada fue cancelada/)).toBeVisible();
@@ -145,7 +149,7 @@ test("dos invitados ven asistencia, acompañantes y necesidades en tiempo real",
         await request.post(
           `${api}/gatherings/${gathering.id}/participants/${organizer.id}/checklist`,
           {
-            headers: { "x-participant-token": organizer.responseToken },
+            headers: { "x-participant-token": organizer.responseToken, Authorization: `Bearer ${process.env.E2E_AUTH_TOKEN}` },
             data: { label: "Sal" },
           },
         )

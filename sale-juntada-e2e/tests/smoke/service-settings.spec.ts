@@ -1,3 +1,4 @@
+import { realAccount, realAccountsConfigured } from "../helpers/account";
 import { randomUUID } from "node:crypto";
 import {
   expect,
@@ -6,15 +7,17 @@ import {
   type Page,
 } from "@playwright/test";
 const api = process.env.E2E_API_URL ?? "http://127.0.0.1:3001/api";
-type Participant = { id: string; responseToken: string };
+type Participant = { id: string; responseToken: string; accessToken?: string };
 const headers = (p: Participant) => ({
   "x-participant-token": p.responseToken,
+  Authorization: `Bearer ${p.accessToken}`,
   "idempotency-key": randomUUID(),
 });
 const participantUrl = (id: string, p: Participant) =>
   `${api}/gatherings/${id}/participants/${p.id}`;
 async function fixture(request: APIRequestContext) {
   const response = await request.post(`${api}/gatherings`, {
+    headers: { Authorization: `Bearer ${process.env.E2E_AUTH_TOKEN}` },
     data: {
       title: "Servicios del asado",
       organizerName: "Tomy",
@@ -31,16 +34,17 @@ async function fixture(request: APIRequestContext) {
   };
   const joined = await request.post(
     `${api}/gatherings/${gathering.id}/participants`,
-    { data: { name: "Sofi" } },
+    { headers: { Authorization: `Bearer ${process.env.E2E_FRIEND_AUTH_TOKEN}` }, data: { name: "Sofi" } },
   );
   expect(joined.ok(), await joined.text()).toBeTruthy();
   return {
     gathering,
-    organizer: gathering.participants[0],
-    friend: (await joined.json()) as Participant,
+    organizer: { ...gathering.participants[0], accessToken: process.env.E2E_AUTH_TOKEN },
+    friend: { ...await joined.json(), accessToken: process.env.E2E_FRIEND_AUTH_TOKEN } as Participant,
   };
 }
 async function session(page: Page, slug: string, participant: Participant) {
+  await realAccount(page, participant.accessToken);
   await page.addInitScript(
     ({ slug, participant }) =>
       localStorage.setItem(
@@ -55,7 +59,7 @@ async function session(page: Page, slug: string, participant: Participant) {
 }
 test.beforeEach(() =>
   test.skip(
-    process.env.E2E_REAL_DB !== "1",
+    process.env.E2E_REAL_DB !== "1" || !realAccountsConfigured,
     "Requiere API y PostgreSQL local.",
   ),
 );
@@ -261,6 +265,7 @@ test("organizador configura, invitados reciben en vivo y el historial se conserv
 test("Cuentas exige cierre, conserva su liquidación al archivar y bloquea carreras", async ({
   request,
 }) => {
+  test.skip(!process.env.E2E_THIRD_AUTH_TOKEN, "Requiere una tercera cuenta para sumar a Nico.");
   const { gathering: g, organizer, friend } = await fixture(request);
   const orgUrl = participantUrl(g.id, organizer);
   const guestUrl = participantUrl(g.id, friend);
@@ -304,6 +309,7 @@ test("Cuentas exige cierre, conserva su liquidación al archivar y bloquea carre
   expect(
     (
       await request.post(`${api}/gatherings/${g.id}/participants`, {
+        headers: { Authorization: `Bearer ${process.env.E2E_THIRD_AUTH_TOKEN}` },
         data: { name: "Nico" },
       })
     ).ok(),

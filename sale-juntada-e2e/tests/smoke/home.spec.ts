@@ -1,4 +1,10 @@
 import { expect, test } from "@playwright/test";
+import { mockAccount } from "../helpers/account";
+
+test.beforeEach(async ({ page }, info) => {
+  test.skip(process.env.E2E_REAL_DB === "1" && !info.title.includes("PostgreSQL real"), "La suite simulada corre separada de las pruebas con cuentas reales.");
+  if (!info.title.includes("sin sesión") && process.env.E2E_REAL_DB !== "1") await mockAccount(page);
+});
 
 const emptySettlement = {
   totalCents: 0,
@@ -55,22 +61,12 @@ test("abre una juntada sembrada desde PostgreSQL real", async ({ page, request }
   await expect(
     page.getByRole("heading", { name: "Asado demo en Tucumán" }).first(),
   ).toBeVisible();
-  await expect(page.locator(".response-pill")).toHaveText("4/4 respondieron");
-
-  const gatheringResponse = await request.get(
-    "http://127.0.0.1:3001/api/gatherings/asado-demo-tucuman",
-  );
-  expect(gatheringResponse.ok()).toBeTruthy();
-  const gathering = await gatheringResponse.json() as { id: string };
-  const matchesResponse = await request.get(
-    `http://127.0.0.1:3001/api/gatherings/${gathering.id}/matches`,
-  );
-  expect(matchesResponse.ok()).toBeTruthy();
-  const matches = await matchesResponse.json() as Array<{
-    available: number;
-    total: number;
-  }>;
-  expect(matches[0]).toMatchObject({ available: 4, total: 4 });
+  await expect(page.getByRole("button", {name:"Ingresar para aceptar la invitación"})).toBeVisible();
+  const gatheringResponse = await request.get("http://127.0.0.1:3001/api/gatherings/asado-demo-tucuman");
+  const gathering = await gatheringResponse.json();
+  expect(gathering.participants).toEqual([]);
+  const matchesResponse = await request.get(`http://127.0.0.1:3001/api/gatherings/${gathering.id}/matches`);
+  expect(matchesResponse.status()).toBe(401);
 });
 
 test("permite elegir disponibilidad y buscar coincidencias", async ({ page }) => {
@@ -113,6 +109,11 @@ test("permite elegir disponibilidad y buscar coincidencias", async ({ page }) =>
 
   await page.route("**/api/gatherings**", async (route) => {
     const request = route.request();
+    if (request.url().endsWith("/auth-link")) {
+      const participantId = new URL(request.url()).pathname.split("/").at(-2);
+      await route.fulfill({ status: 200, json: { id: participantId, responseToken: request.headers()["x-participant-token"] } });
+      return;
+    }
     if (request.method() === "GET" && request.url().endsWith("/payment-details")) {
       await route.fulfill({ status: 200, json: { paymentAlias: null, recipients: [] } });
       return;
@@ -155,7 +156,7 @@ test("permite elegir disponibilidad y buscar coincidencias", async ({ page }) =>
   });
 
   await page.goto("/j/previa-sin-fecha-m1n2o3");
-  await page.getByRole("button", { name: /sumarme/i }).click();
+  await page.getByRole("button", { name: /Aceptar invitación/i }).click();
   await page.getByLabel("Tu nombre").fill("Sofi");
   await page.getByRole("button", { name: /Entrar y marcar horarios/i }).click();
   await expect(page.getByText("Sofi (vos)")).toBeVisible();
@@ -195,6 +196,11 @@ test("crea una juntada y abre su enlace compartible", async ({ page }) => {
 
   await page.route("**/api/gatherings**", async (route) => {
     const request = route.request();
+    if (request.url().endsWith("/auth-link")) {
+      const participantId = new URL(request.url()).pathname.split("/").at(-2);
+      await route.fulfill({ status: 200, json: { id: participantId, responseToken: request.headers()["x-participant-token"] } });
+      return;
+    }
     if (request.method() === "GET" && request.url().endsWith("/payment-details")) {
       await route.fulfill({ status: 200, json: { paymentAlias: null, recipients: [] } });
       return;
@@ -231,7 +237,7 @@ test("crea una juntada y abre su enlace compartible", async ({ page }) => {
   ).toBeVisible();
 });
 
-test("un invitado entra sin registro y guarda su disponibilidad", async ({
+test("un invitado con cuenta acepta y guarda su disponibilidad", async ({
   page,
 }) => {
   const gathering = {
@@ -257,6 +263,11 @@ test("un invitado entra sin registro y guarda su disponibilidad", async ({
 
   await page.route("**/api/gatherings**", async (route) => {
     const request = route.request();
+    if (request.url().endsWith("/auth-link")) {
+      const participantId = new URL(request.url()).pathname.split("/").at(-2);
+      await route.fulfill({ status: 200, json: { id: participantId, responseToken: request.headers()["x-participant-token"] } });
+      return;
+    }
     if (request.method() === "GET" && request.url().endsWith("/payment-details")) {
       await route.fulfill({ status: 200, json: { paymentAlias: null, recipients: [] } });
       return;
@@ -309,7 +320,7 @@ test("un invitado entra sin registro y guarda su disponibilidad", async ({
   });
 
   await page.goto("/j/birras-en-el-centro-d4e5f6");
-  await page.getByRole("button", { name: /sumarme/i }).click();
+  await page.getByRole("button", { name: /Aceptar invitación/i }).click();
   await page.getByLabel("Tu nombre").fill("Sofi");
   await page.getByRole("button", { name: /Entrar y marcar horarios/i }).click();
   await expect(page.getByText("Sofi (vos)")).toBeVisible();
@@ -348,6 +359,11 @@ test("carga un gasto y calcula quién transfiere a quién", async ({ page }) => 
 
   await page.route("**/api/gatherings**", async (route) => {
     const request = route.request();
+    if (request.url().endsWith("/auth-link")) {
+      const participantId = new URL(request.url()).pathname.split("/").at(-2);
+      await route.fulfill({ status: 200, json: { id: participantId, responseToken: request.headers()["x-participant-token"] } });
+      return;
+    }
     if (request.method() === "GET" && request.url().endsWith("/payment-details")) {
       await route.fulfill({ status: 200, json: { paymentAlias: null, recipients: [] } });
       return;
@@ -456,7 +472,7 @@ test("carga un gasto y calcula quién transfiere a quién", async ({ page }) => 
   });
 
   await page.goto("/j/pizza-del-sabado-g7h8i9");
-  await page.getByRole("button", { name: /sumarme/i }).click();
+  await page.getByRole("button", { name: /Aceptar invitación/i }).click();
   await page.getByLabel("Tu nombre").fill("Sofi");
   await page.getByRole("button", { name: /Entrar y marcar horarios/i }).click();
   await expect(page.getByText("Sofi (vos)")).toBeVisible();
@@ -581,6 +597,11 @@ test("el grupo elige responsables y el organizador edita la compra", async ({
   });
   await page.route("**/api/gatherings**", async (route) => {
     const request = route.request();
+    if (request.url().endsWith("/auth-link")) {
+      const participantId = new URL(request.url()).pathname.split("/").at(-2);
+      await route.fulfill({ status: 200, json: { id: participantId, responseToken: request.headers()["x-participant-token"] } });
+      return;
+    }
     if (request.method() === "GET" && request.url().endsWith("/payment-details")) {
       await route.fulfill({ status: 200, json: { paymentAlias: null, recipients: [] } });
       return;
@@ -707,4 +728,24 @@ test("el grupo elige responsables y el organizador edita la compra", async ({
   await expect.poll(() => contributionDescription).toBe("Carne para el asado");
   await expect.poll(() => meatQuantity).toBe(2);
   await expect(meatMission.getByText("VOS LLEVÁS")).toBeVisible();
+});
+
+
+test("sin sesión no se puede aceptar una invitación ni crear una juntada", async ({ page }) => {
+  const mutations: string[] = [];
+  await page.route("**/api/gatherings**", async (route) => {
+    if (route.request().method() !== "GET") mutations.push(route.request().url());
+    await route.fulfill({ status: 200, json: { id: "private", slug: "invite-login", title: "Invitación con cuenta", ...gatheringSchedule, status: "OPEN", participants: [], isParticipant: false, participantCount: 1 } });
+  });
+  await page.addInitScript(() => localStorage.setItem("sale-juntada:participant:invite-login", JSON.stringify({participantId:"legacy",responseToken:"old-access"})));
+  await page.goto("/j/invite-login/invitados");
+  await expect(page.getByRole("heading", {name:"Ingresá para sumarte"})).toBeVisible();
+  await expect(page.getByLabel("Tu nombre", {exact:true})).toHaveCount(0);
+  await expect(page.getByRole("radiogroup")).toHaveCount(0);
+  await page.getByRole("button", {name:"Ingresar para aceptar la invitación"}).click();
+  await expect(page.getByRole("button", {name:/Google/})).toBeVisible();
+  await page.goto("/");
+  await page.getByRole("button", {name:/Crear una juntada/}).click();
+  await expect(page.getByRole("dialog", {name:"Ingresar a Sale Juntada"})).toBeVisible();
+  expect(mutations).toEqual([]);
 });

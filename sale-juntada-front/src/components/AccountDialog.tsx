@@ -245,7 +245,7 @@ export function AccountDialog({
           <span className="eyebrow">Tu perfil, en cualquier dispositivo</span>
           <h2>Ingresá a Sale Juntada</h2>
           <p>
-            Guardá tus juntadas sin perder la opción de participar como invitado.
+            Ingresá con tu cuenta para crear juntadas, aceptar invitaciones y confirmar tu asistencia.
           </p>
 
           {!configured ? (
@@ -292,7 +292,7 @@ export function AccountDialog({
 
           {error || initializationError ? (
             <small className="form-error" role="alert">
-              {error ?? initializationError}
+              {error || initializationError}
             </small>
           ) : null}
           <small className="privacy-note">

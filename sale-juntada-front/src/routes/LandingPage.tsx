@@ -15,7 +15,7 @@ const steps = [
     number: "02",
     icon: "✓",
     title: "Se organizan",
-    detail: "Cada uno dice si va, sin registros ni descargas.",
+    detail: "Cada uno ingresa con su cuenta y confirma si va.",
   },
   {
     number: "03",

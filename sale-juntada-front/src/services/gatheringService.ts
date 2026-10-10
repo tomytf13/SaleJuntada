@@ -1,3 +1,4 @@
+import { supabase } from "../auth/supabaseClient";
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001/api";
 export const SOCKET_URL =
   import.meta.env.VITE_SOCKET_URL ?? API_URL.replace(/\/api\/?$/, "");
@@ -375,13 +376,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const timeout = window.setTimeout(() => controller.abort(), 15_000);
   let response: Response;
   try {
+    const headers = new Headers(init?.headers);
+    headers.set("Content-Type", "application/json");
+    if (!headers.has("Authorization") && supabase) {
+      const { data } = await supabase.auth.getSession();
+      if (data.session) headers.set("Authorization", `Bearer ${data.session.access_token}`);
+    }
     response = await fetch(`${API_URL}${path}`, {
       ...init,
       signal: controller.signal,
-      headers: {
-        "Content-Type": "application/json",
-        ...init?.headers,
-      },
+      headers,
     });
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
@@ -523,19 +527,6 @@ export const gatheringService = {
         headers: { "x-participant-token": token },
       },
     );
-  },
-
-  addParticipant(
-    gatheringId: string,
-    name: string,
-    avatarUrl?: string,
-    allowDuplicateName?: boolean,
-    contact?: string,
-  ) {
-    return request<Participant>(`/gatherings/${gatheringId}/participants`, {
-      method: "POST",
-      body: JSON.stringify({ name, avatarUrl, allowDuplicateName, contact }),
-    });
   },
 
   setAvailability(

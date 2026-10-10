@@ -1,3 +1,4 @@
+import { AccountDialog } from "./AccountDialog";
 import { FormEvent, Suspense, lazy, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -132,6 +133,7 @@ export function CreateGatheringDialog({
 
   const createEvent = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!accessToken) return;
     const form = new FormData(event.currentTarget);
     const title = String(form.get("title") || "").trim();
     const place = selectedLocation?.label ?? "";
@@ -197,6 +199,8 @@ export function CreateGatheringDialog({
       setIsSubmitting(false);
     }
   };
+
+  if (!user || !accessToken) return <AccountDialog open={open} onClose={onClose} />;
 
   return (
     <AnimatedDialog

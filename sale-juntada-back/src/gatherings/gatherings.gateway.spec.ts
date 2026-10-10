@@ -1,3 +1,4 @@
+import { SupabaseAuthService } from "../auth/supabase-auth.service";
 import { Server, Socket } from "socket.io";
 import { ParticipantAuthService } from "../participants/participant-auth.service";
 import { generateParticipantToken } from "../participants/participant-token";
@@ -11,19 +12,51 @@ function buildGateway(
   const auth = {
     findByToken: jest.fn().mockResolvedValue(participant),
   } as unknown as ParticipantAuthService;
-  const gateway = new GatheringsGateway(auth);
+  const accountAuth = {
+    requireIdentity: jest.fn().mockResolvedValue({ id: "account-1" }),
+  } as unknown as SupabaseAuthService;
+  const gateway = new GatheringsGateway(auth, accountAuth);
   const emit = jest.fn();
   gateway.server = { to: jest.fn(() => ({ emit })) } as unknown as Server;
-  return { gateway, auth, emit };
+  return { gateway, auth, accountAuth, emit };
 }
 
 function buildClient(id = "socket-1") {
-  return { id, join: jest.fn().mockResolvedValue(undefined) } as unknown as Socket;
+  return {
+    id,
+    handshake: { auth: { accessToken: "account-token" } },
+    disconnect: jest.fn(),
+    join: jest.fn().mockResolvedValue(undefined),
+  } as unknown as Socket;
 }
 
 const member = { id: "guest", name: "Mica", isOrganizer: false };
 
 describe("GatheringsGateway gathering:watch", () => {
+  it("no admite una credencial de participante sin cuenta", async () => {
+    const { gateway } = buildGateway(member);
+    const client = buildClient();
+    client.handshake.auth = {};
+    await gateway.watch(client, {
+      gatheringId: "gathering",
+      participantToken: TOKEN,
+    });
+    expect(client.join).not.toHaveBeenCalled();
+  });
+  it("rechaza una sesión vencida y desconecta el socket", async () => {
+    const { gateway, accountAuth } = buildGateway(member);
+    (accountAuth.requireIdentity as jest.Mock).mockRejectedValue(
+      new Error("expired"),
+    );
+    const client = buildClient();
+    await gateway.watch(client, {
+      gatheringId: "gathering",
+      participantToken: TOKEN,
+    });
+    expect(client.disconnect).toHaveBeenCalledWith(true);
+    expect(client.join).not.toHaveBeenCalled();
+  });
+
   it("suscribe a un participante con credencial válida", async () => {
     const { gateway } = buildGateway(member);
     const client = buildClient();

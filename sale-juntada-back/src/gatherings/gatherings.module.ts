@@ -1,3 +1,4 @@
+import { GatheringAccountGuard } from "./gathering-account.guard";
 import { ChecklistService } from "./checklist.service";
 import { Module } from "@nestjs/common";
 import { ParticipantsModule } from "../participants/participants.module";
@@ -9,6 +10,6 @@ import { GatheringsService } from "./gatherings.service";
 @Module({
   imports: [ParticipantsModule, RsvpModule],
   controllers: [GatheringsController],
-  providers: [GatheringsService, GatheringsGateway, ChecklistService],
+  providers: [GatheringAccountGuard, GatheringsService, GatheringsGateway, ChecklistService],
 })
 export class GatheringsModule {}

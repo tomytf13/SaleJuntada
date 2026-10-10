@@ -14,6 +14,7 @@ const auth = vi.hoisted(() => ({
     isLoading: false,
     initializationError: null as string | null,
     user: null as null | {
+      id?: string;
       email?: string;
       user_metadata: Record<string, unknown>;
     },
@@ -83,8 +84,8 @@ const baseGathering: Gathering = {
 };
 
 beforeEach(() => {
-  auth.value.user = null;
-  auth.value.accessToken = null;
+  auth.value.user = { id: "account-1", email: "sofi@example.com", user_metadata: {} };
+  auth.value.accessToken = "account-token";
   service.getBySlug.mockReset();
   localStorage.clear();
   window.scrollTo = vi.fn();
@@ -95,7 +96,7 @@ beforeEach(() => {
   service.setRsvp.mockReset();
   service.addParticipant.mockReset();
   service.addAuthenticatedParticipant.mockReset();
-  service.linkAuthenticatedParticipant.mockResolvedValue({});
+  service.linkAuthenticatedParticipant.mockReset().mockImplementation((_g, id, token) => Promise.resolve({ id, responseToken: token }));
   service.getMatches.mockResolvedValue([]);
   service.getExpenseSettlement.mockResolvedValue(null);
   service.getPaymentDetails.mockResolvedValue(null);
@@ -125,6 +126,21 @@ function renderGatheringPage(slug: string, view = "") {
 }
 
 describe("GatheringPage", () => {
+  it("sin login ignora el acceso antiguo y pide una cuenta antes de aceptar", async () => {
+    auth.value.user = null;
+    auth.value.accessToken = null;
+    saveSession();
+    service.getBySlug.mockResolvedValue({ ...privateGathering, participants: [], isParticipant: false });
+    renderGatheringPage("asado-hoy", "invitados");
+    await userEvent.click(await screen.findByRole("button", { name: "Ingresar para aceptar la invitación" }));
+    expect(screen.getByRole("button", { name: /Google/ })).toBeEnabled();
+    expect(service.getBySlug).toHaveBeenCalledWith("asado-hoy", undefined);
+    expect(service.linkAuthenticatedParticipant).not.toHaveBeenCalled();
+    expect(service.addAuthenticatedParticipant).not.toHaveBeenCalled();
+    expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
+    expect(live.connections).not.toHaveBeenCalled();
+  });
+
   it("muestra un mensaje específico cuando el slug no existe, sin modal de join ni demo", async () => {
     service.getBySlug.mockRejectedValue(new ApiError("No encontrada", 404));
 
@@ -218,12 +234,12 @@ describe("invitación y asistencia en vivo", () => {
       await screen.findByRole("heading", { name: "Asado de hoy", level: 1 }),
     ).toBeVisible();
     expect(screen.getByText("📍 Yerba Buena")).toBeVisible();
-    expect(screen.getByRole("button", { name: /sumarme/i })).toBeVisible();
+    expect(screen.getByRole("button", { name: /Aceptar invitación/i })).toBeVisible();
     expect(screen.queryByLabelText("Tu nombre")).not.toBeInTheDocument();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
     expect(screen.queryByText("Tomy")).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /sumarme/i }));
+    await userEvent.click(screen.getByRole("button", { name: /Aceptar invitación/i }));
     expect(screen.getByLabelText("Tu nombre")).toBeVisible();
   });
 
@@ -235,7 +251,7 @@ describe("invitación y asistencia en vivo", () => {
     ));
     service.addAuthenticatedParticipant.mockResolvedValue({ ...privateGathering.participants[0], responseToken: "secret" });
     renderGatheringPage("asado-hoy");
-    await userEvent.click(await screen.findByRole("button", { name: /sumarme/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /Aceptar invitación/i }));
     expect(screen.getByLabelText("Tu nombre")).toHaveValue("Sofi");
     await userEvent.selectOptions(screen.getByLabelText("País", { exact: true }), "ES");
     await userEvent.type(screen.getByLabelText(/Número de teléfono/), "612 345 678");
@@ -248,7 +264,8 @@ describe("invitación y asistencia en vivo", () => {
   it("rechaza un número incompleto antes de enviarlo", async () => {
     service.getBySlug.mockResolvedValue({ ...privateGathering, participants: [], isParticipant: false });
     renderGatheringPage("asado-hoy");
-    await userEvent.click(await screen.findByRole("button", { name: /sumarme/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /Aceptar invitación/i }));
+    await userEvent.clear(screen.getByLabelText("Tu nombre"));
     await userEvent.type(screen.getByLabelText("Tu nombre"), "Sofi");
     await userEvent.type(screen.getByLabelText(/Número de teléfono/), "123");
     await userEvent.click(screen.getByRole("button", { name: "Entrar y responder" }));
@@ -264,15 +281,16 @@ describe("invitación y asistencia en vivo", () => {
           : { ...privateGathering, participants: [], isParticipant: false },
       ),
     );
-    service.addParticipant.mockResolvedValue({
+    service.addAuthenticatedParticipant.mockResolvedValue({
       ...privateGathering.participants[0],
       responseToken: "secret",
     });
     service.setRsvp.mockResolvedValue({});
     renderGatheringPage("asado-hoy");
     await userEvent.click(
-      await screen.findByRole("button", { name: /sumarme/i }),
+      await screen.findByRole("button", { name: /Aceptar invitación/i }),
     );
+    await userEvent.clear(screen.getByLabelText("Tu nombre"));
     await userEvent.type(screen.getByLabelText("Tu nombre"), "Sofi");
     expect(screen.getByLabelText("País", { exact: true })).toHaveValue("AR");
     await userEvent.type(screen.getByLabelText(/Número de teléfono/), "9 381 123 4567");
@@ -281,7 +299,7 @@ describe("invitación y asistencia en vivo", () => {
     );
     await screen.findByRole("radiogroup", { name: "Tu asistencia" });
     expect(service.getBySlug).toHaveBeenCalledWith("asado-hoy", "secret");
-    expect(service.addParticipant).toHaveBeenCalledWith("gathering-1", "Sofi", "emoji:🦆", false, "+5493811234567");
+    expect(service.addAuthenticatedParticipant).toHaveBeenCalledWith("gathering-1", "account-token", { name: "Sofi", contact: "+5493811234567" });
     await userEvent.click(screen.getByRole("link", { name: /Invitados 1 van/ }));
     expect(screen.getByText("Tomy")).toBeVisible();
     await userEvent.click(screen.getByRole("radio", { name: "Voy" }));
@@ -356,11 +374,12 @@ describe("invitación y asistencia en vivo", () => {
 describe("servicios con pantallas propias", () => {
   it("abre un servicio privado después de ingresar sin perder el destino", async () => {
     service.getBySlug.mockImplementation((_slug: string, token?: string) => Promise.resolve(token ? privateGathering : { ...privateGathering, participants: [], isParticipant: false }));
-    service.addParticipant.mockResolvedValue({ ...privateGathering.participants[0], responseToken: "secret" });
+    service.addAuthenticatedParticipant.mockResolvedValue({ ...privateGathering.participants[0], responseToken: "secret" });
     renderGatheringPage("asado-hoy", "pendientes");
-    await userEvent.click(await screen.findByRole("button", { name: /sumarme/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /Aceptar invitación/i }));
     expect(screen.queryByText("Qué falta resolver")).not.toBeInTheDocument();
     expect(service.getChecklist).not.toHaveBeenCalled();
+    await userEvent.clear(screen.getByLabelText("Tu nombre"));
     await userEvent.type(screen.getByLabelText("Tu nombre"), "Sofi");
     await userEvent.click(screen.getByRole("button", { name: "Entrar y responder" }));
     expect(await screen.findByRole("heading", { name: "Qué falta resolver" })).toBeVisible();
