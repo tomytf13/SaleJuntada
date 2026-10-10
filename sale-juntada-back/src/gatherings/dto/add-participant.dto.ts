@@ -24,7 +24,7 @@ export class AddParticipantDto {
       : value,
   )
   @IsString()
-  @Matches(/^\+[1-9]\d{7,14}$/, {
+  @Matches(/^\+[1-9]\d{6,14}$/, {
     message:
       "Ingresá el teléfono con código de país, por ejemplo +54 9 381 123 4567",
   })

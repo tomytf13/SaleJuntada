@@ -5084,6 +5084,19 @@ footer > span {
 .join-gathering p, .rsvp-section > p, .gathering-checklist > p { color: var(--ink-soft); line-height: 1.5; }
 .join-gathering form { display: grid; gap: 14px; }
 .join-gathering input, .checklist-add input, .checklist-item-actions select { padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: white; min-width: 0; font: inherit; }
+.phone-contact { margin: 0; padding: 0; border: 0; min-width: 0; }
+.phone-contact legend { margin-bottom: 12px; font-weight: 600; }
+.phone-contact-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 12px; }
+.phone-contact-fields > div { display: grid; gap: 8px; min-width: 0; }
+.phone-contact-fields label { font-size: 14px; color: var(--ink-soft); }
+.phone-contact-fields select, .phone-contact-fields input { width: 100%; box-sizing: border-box; min-width: 0; }
+.phone-contact-fields select { padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: white; font: inherit; color: inherit; }
+.phone-contact-fields select:focus-visible, .phone-contact-fields input:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+.join-gathering .phone-contact-help { margin: 10px 0 0; font-size: 13px; }
+.phone-contact:disabled { opacity: .6; }
+@media (max-width: 480px) {
+  .phone-contact-fields { grid-template-columns: minmax(0, 1fr); }
+}
 .join-gathering .text-link { justify-self: start; background: none; border: 0; cursor: pointer; }
 .rsvp-options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 24px 0; }
 .rsvp-choice { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 64px; border: 2px solid var(--line); border-radius: 14px; background: white; cursor: pointer; font-weight: 800; }

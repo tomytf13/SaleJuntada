@@ -237,21 +237,22 @@ describe("invitación y asistencia en vivo", () => {
     renderGatheringPage("asado-hoy");
     await userEvent.click(await screen.findByRole("button", { name: /sumarme/i }));
     expect(screen.getByLabelText("Tu nombre")).toHaveValue("Sofi");
-    await userEvent.type(screen.getByLabelText(/Teléfono de contacto/), "+54 (9) 381-123-4567");
+    await userEvent.selectOptions(screen.getByLabelText("País", { exact: true }), "ES");
+    await userEvent.type(screen.getByLabelText(/Número de teléfono/), "612 345 678");
     await userEvent.click(screen.getByRole("button", { name: "Entrar y responder" }));
-    await waitFor(() => expect(service.addAuthenticatedParticipant).toHaveBeenCalledWith("gathering-1", "google-session", { name: "Sofi", contact: "+5493811234567" }));
+    await waitFor(() => expect(service.addAuthenticatedParticipant).toHaveBeenCalledWith("gathering-1", "google-session", { name: "Sofi", contact: "+34612345678" }));
     expect(service.addParticipant).not.toHaveBeenCalled();
     await screen.findByRole("radiogroup", { name: "Tu asistencia" });
   });
 
-  it("pide código de país antes de enviar el teléfono", async () => {
+  it("rechaza un número incompleto antes de enviarlo", async () => {
     service.getBySlug.mockResolvedValue({ ...privateGathering, participants: [], isParticipant: false });
     renderGatheringPage("asado-hoy");
     await userEvent.click(await screen.findByRole("button", { name: /sumarme/i }));
     await userEvent.type(screen.getByLabelText("Tu nombre"), "Sofi");
-    await userEvent.type(screen.getByLabelText(/Teléfono de contacto/), "3811234567");
+    await userEvent.type(screen.getByLabelText(/Número de teléfono/), "123");
     await userEvent.click(screen.getByRole("button", { name: "Entrar y responder" }));
-    expect((await screen.findAllByRole("alert"))[0]).toHaveTextContent("código de país");
+    expect((await screen.findAllByRole("alert"))[0]).toHaveTextContent("código de área");
     expect(service.addParticipant).not.toHaveBeenCalled();
   });
 
@@ -273,7 +274,8 @@ describe("invitación y asistencia en vivo", () => {
       await screen.findByRole("button", { name: /sumarme/i }),
     );
     await userEvent.type(screen.getByLabelText("Tu nombre"), "Sofi");
-    await userEvent.type(screen.getByLabelText(/Teléfono de contacto/), "+54 9 381 123 4567");
+    expect(screen.getByLabelText("País", { exact: true })).toHaveValue("AR");
+    await userEvent.type(screen.getByLabelText(/Número de teléfono/), "9 381 123 4567");
     await userEvent.click(
       screen.getByRole("button", { name: "Entrar y responder" }),
     );
