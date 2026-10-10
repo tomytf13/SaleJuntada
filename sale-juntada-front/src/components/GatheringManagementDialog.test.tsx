@@ -1,4 +1,10 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Gathering } from "../services/gatheringService";
 import { GatheringManagementDialog } from "./GatheringManagementDialog";
@@ -46,7 +52,11 @@ describe("GatheringManagementDialog", () => {
 
     await waitFor(() =>
       expect(onSave).toHaveBeenCalledWith(
-        expect.objectContaining({ title: "Asado de cumple" }),
+        expect.objectContaining({
+          title: "Asado de cumple",
+          windowStart: gathering.windowStart,
+          windowEnd: gathering.windowEnd,
+        }),
       ),
     );
     expect(confirm).not.toHaveBeenCalled();

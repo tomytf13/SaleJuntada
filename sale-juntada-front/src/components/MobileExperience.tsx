@@ -1,3 +1,4 @@
+import { useGatheringDraft } from "../hooks/useGatheringDraft";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, m } from "framer-motion";
 import {
@@ -20,10 +21,7 @@ import {
 import type { AppSection } from "../hooks/useActiveSection";
 import {
   gatheringService,
-  type DietaryPreference,
   type CatalogProduct,
-  type MealArrangement,
-  type Participant,
   type PurchaseItem,
   type PurchasePlan,
 } from "../services/gatheringService";
@@ -234,6 +232,7 @@ export function MobileDashboard({
 type MobileBottomNavProps = {
   activeSection: AppSection;
   purchaseEnabled: boolean;
+  availabilityEnabled?: boolean;
   onHome(): void;
   onAvailability(): void;
   onPurchase(): void;
@@ -243,13 +242,14 @@ type MobileBottomNavProps = {
 export function MobileBottomNav({
   activeSection,
   purchaseEnabled,
+  availabilityEnabled = true,
   onHome,
   onAvailability,
   onPurchase,
   onMore,
 }: MobileBottomNavProps) {
   return (
-    <nav className="mobile-bottom-nav" aria-label="Navegación principal">
+    <nav className={`mobile-bottom-nav ${availabilityEnabled ? "" : "without-availability"}`} aria-label="Navegación principal">
       <button
         type="button"
         className={activeSection === "home" ? "active" : ""}
@@ -264,6 +264,7 @@ export function MobileBottomNav({
         <Home size={19} />
         <span>Inicio</span>
       </button>
+      {availabilityEnabled ? (
       <button
         type="button"
         className={activeSection === "availability" ? "active" : ""}
@@ -278,6 +279,7 @@ export function MobileBottomNav({
         <CalendarDays size={19} />
         <span>Horarios</span>
       </button>
+      ) : null}
       <button
         type="button"
         className={`${!purchaseEnabled ? "locked" : ""} ${activeSection === "purchase" ? "active" : ""}`.trim()}
@@ -410,20 +412,6 @@ const purchaseVisuals: Record<
   other: { main: "🛍️", detail: "✨", caption: "Lo que haga falta" },
 };
 
-const dietaryOptions: Array<{
-  value: DietaryPreference;
-  label: string;
-  icon: string;
-}> = [
-  { value: "CELIAC", label: "Sin gluten / celiaquía", icon: "🌾" },
-  { value: "VEGAN", label: "Vegano", icon: "🌱" },
-  { value: "VEGETARIAN", label: "Vegetariano", icon: "🥬" },
-];
-
-const dietaryLabels = new Map(
-  dietaryOptions.map((option) => [option.value, option.label]),
-);
-
 function purchaseAssigneeInitials(name: string) {
   return name
     .trim()
@@ -504,12 +492,10 @@ type PurchasePlannerProps = {
   participantId?: string;
   participantToken?: string;
   canEdit?: boolean;
+  readOnly?: boolean;
   remoteRevision?: number;
   isLiveConnected?: boolean;
   participantCount: number;
-  participants?: Participant[];
-  currentParticipant?: Participant;
-  onDietaryUpdated?(participant: Participant): void;
   onRequireParticipant?(): void;
   onNotice(message: string): void;
 };
@@ -520,17 +506,15 @@ export function PurchasePlanner({
   participantId,
   participantToken,
   canEdit = false,
+  readOnly = false,
   remoteRevision = 0,
   isLiveConnected = false,
   participantCount,
-  participants = [],
-  currentParticipant,
-  onDietaryUpdated,
   onRequireParticipant,
   onNotice,
 }: PurchasePlannerProps) {
   const storageKey = `sale-juntada:purchase:v2:${gatheringKey}`;
-  const [purchase, setPurchase] = useState<PurchasePlan>(() =>
+  const [purchase, setPurchase] = useGatheringDraft<PurchasePlan>("purchase-plan", () =>
     readPurchasePlan(storageKey, participantCount),
   );
   const [isLoading, setIsLoading] = useState(Boolean(gatheringId));
@@ -538,10 +522,10 @@ export function PurchasePlanner({
   const [pendingResponsibilityKey, setPendingResponsibilityKey] = useState<
     string | null
   >(null);
-  const [editingContributionKey, setEditingContributionKey] = useState<
+  const [editingContributionKey, setEditingContributionKey] = useGatheringDraft<
     string | null
-  >(null);
-  const [contributionDraft, setContributionDraft] = useState({
+  >("purchase-editor", null);
+  const [contributionDraft, setContributionDraft] = useGatheringDraft("purchase-contribution", {
     catalogProductId: "",
     catalogPresentationId: "",
     description: "",
@@ -551,18 +535,11 @@ export function PurchasePlanner({
   });
   const [catalogProducts, setCatalogProducts] = useState<CatalogProduct[]>([]);
   const [catalogUnavailable, setCatalogUnavailable] = useState(false);
-  const [isDirty, setIsDirty] = useState(false);
-  const [dietaryPreferences, setDietaryPreferences] = useState<
-    DietaryPreference[]
-  >(currentParticipant?.dietaryPreferences ?? []);
-  const [mealArrangement, setMealArrangement] =
-    useState<MealArrangement | null>(
-      currentParticipant?.mealArrangement ?? null,
-    );
-  const [isDietarySaving, setIsDietarySaving] = useState(false);
+  const [isDirty, setIsDirty] = useGatheringDraft("purchase-dirty", false);
+  const dirtyRef = useRef(isDirty);
   const editVersionRef = useRef(0);
   const noticeRef = useRef(onNotice);
-  const editable = !gatheringId || canEdit;
+  const editable = !readOnly && (!gatheringId || canEdit);
 
   useEffect(() => {
     noticeRef.current = onNotice;
@@ -591,12 +568,13 @@ export function PurchasePlanner({
   }, [gatheringId, purchase, storageKey]);
 
   useEffect(() => {
-    if (!gatheringId) return;
+    // El plan de compra dejó de ser público: sin credencial no se pide.
+    if (!gatheringId || !participantToken) return;
     let cancelled = false;
     gatheringService
-      .getPurchasePlan(gatheringId)
+      .getPurchasePlan(gatheringId, participantToken)
       .then((plan) => {
-        if (cancelled) return;
+        if (cancelled || dirtyRef.current) return;
         setPurchase(plan);
         setIsDirty(false);
       })
@@ -610,7 +588,7 @@ export function PurchasePlanner({
     return () => {
       cancelled = true;
     };
-  }, [gatheringId, participantCount, remoteRevision]);
+  }, [gatheringId, participantToken, participantCount, remoteRevision, setPurchase, setIsDirty]);
 
   useEffect(() => {
     if (
@@ -618,6 +596,7 @@ export function PurchasePlanner({
       !participantId ||
       !participantToken ||
       !canEdit ||
+      readOnly ||
       !isDirty
     )
       return;
@@ -633,6 +612,7 @@ export function PurchasePlanner({
         .then((saved) => {
           if (editVersionRef.current !== version) return;
           setPurchase(saved);
+          dirtyRef.current = false;
           setIsDirty(false);
         })
         .catch(() =>
@@ -645,11 +625,14 @@ export function PurchasePlanner({
     return () => window.clearTimeout(timeout);
   }, [
     canEdit,
+    readOnly,
     gatheringId,
     isDirty,
     participantId,
     participantToken,
     purchase,
+    setPurchase,
+    setIsDirty,
   ]);
 
   const updatePurchase = (update: (current: PurchasePlan) => PurchasePlan) => {
@@ -657,6 +640,7 @@ export function PurchasePlanner({
       onNotice("Sólo quien organiza puede editar la compra.");
       return;
     }
+    dirtyRef.current = Boolean(gatheringId);
     editVersionRef.current += 1;
     setPurchase(update);
     setIsDirty(Boolean(gatheringId));
@@ -681,45 +665,6 @@ export function PurchasePlanner({
   ).filter((contribution) => contribution.isReady).length;
   const activeParticipantId =
     participantId ?? (!gatheringId ? "demo-user" : undefined);
-
-  const toggleDietaryPreference = (preference: DietaryPreference) => {
-    setDietaryPreferences((current) =>
-      current.includes(preference)
-        ? current.filter((candidate) => candidate !== preference)
-        : [...current, preference],
-    );
-  };
-
-  const saveDietaryProfile = async () => {
-    if (!gatheringId || !participantId || !participantToken) {
-      onRequireParticipant?.();
-      onNotice("Entrá a la juntada para guardar tus necesidades de comida.");
-      return;
-    }
-    if (dietaryPreferences.length > 0 && !mealArrangement) {
-      onNotice("Elegí si te ocupás vos o si el grupo debe conseguir un menú.");
-      return;
-    }
-    setIsDietarySaving(true);
-    try {
-      const participant = await gatheringService.updateDietaryProfile(
-        gatheringId,
-        participantId,
-        participantToken,
-        { dietaryPreferences, mealArrangement },
-      );
-      onDietaryUpdated?.(participant);
-      onNotice(
-        dietaryPreferences.length > 0
-          ? "Tu necesidad alimentaria quedó visible para el grupo."
-          : "Quitamos tus necesidades alimentarias.",
-      );
-    } catch {
-      onNotice("No pudimos guardar tu necesidad alimentaria.");
-    } finally {
-      setIsDietarySaving(false);
-    }
-  };
 
   const openContributionForm = (item: PurchaseItem) => {
     if (!activeParticipantId) {
@@ -942,7 +887,7 @@ export function PurchasePlanner({
     >
       <div className="purchase-heading">
         <div>
-          <span className="section-kicker">DESPUÉS DEL MATCH</span>
+          <span className="section-kicker">PARA LA MESA</span>
           <h2 id="purchase-title">Armemos la compra.</h2>
           <p>
             Una base sugerida para {participantCount} personas.
@@ -953,7 +898,7 @@ export function PurchasePlanner({
         </div>
         <div className="purchase-statuses">
           <span className="purchase-status">
-            <Check size={15} /> Fecha cerrada
+            <Check size={15} /> Compra compartida
           </span>
           <span className={`purchase-sync ${isSaving ? "saving" : ""}`}>
             {isLoading
@@ -1114,7 +1059,7 @@ export function PurchasePlanner({
                                 <div className="contribution-actions">
                                   <button
                                     type="button"
-                                    disabled={isPending}
+                                    disabled={isPending || readOnly}
                                     aria-label={
                                       contribution.isReady
                                         ? `Marcar ${contribution.description} pendiente`
@@ -1132,7 +1077,7 @@ export function PurchasePlanner({
                                   </button>
                                   <button
                                     type="button"
-                                    disabled={isPending}
+                                    disabled={isPending || readOnly}
                                     aria-label={`Quitar ${contribution.description}`}
                                     onClick={() =>
                                       removeContribution(item, contribution.id)
@@ -1296,7 +1241,7 @@ export function PurchasePlanner({
                         </button>
                         <button
                           type="button"
-                          disabled={isPending}
+                          disabled={isPending || readOnly}
                           onClick={() => saveContribution(item)}
                         >
                           {isPending ? "Guardando…" : "Guardar aporte"}
@@ -1307,7 +1252,7 @@ export function PurchasePlanner({
                     <m.button
                       type="button"
                       className="responsibility-claim"
-                      disabled={isPending}
+                      disabled={isPending || readOnly}
                       onClick={() => openContributionForm(item)}
                       whileTap={{ scale: 0.97 }}
                     >
@@ -1324,133 +1269,6 @@ export function PurchasePlanner({
           </AnimatePresence>
         </m.div>
       </section>
-
-      {gatheringId ? (
-        <section className="dietary-planner" aria-labelledby="dietary-title">
-          <div className="dietary-heading">
-            <div>
-              <span className="section-kicker">
-                QUE NADIE SE QUEDE SIN COMER
-              </span>
-              <h3 id="dietary-title">Necesidades alimentarias</h3>
-              <p>
-                Marcá lo que necesitás y avisá si te ocupás vos o si el grupo
-                debe conseguir una opción.
-              </p>
-            </div>
-            <span>
-              Visible sólo para quienes tienen el link de esta juntada.
-            </span>
-          </div>
-
-          <div className="dietary-layout">
-            <div className="dietary-form">
-              <div
-                className="dietary-options"
-                aria-label="Preferencias alimentarias"
-              >
-                {dietaryOptions.map((option) => (
-                  <label
-                    key={option.value}
-                    className={
-                      dietaryPreferences.includes(option.value)
-                        ? "selected"
-                        : ""
-                    }
-                  >
-                    <input
-                      type="checkbox"
-                      checked={dietaryPreferences.includes(option.value)}
-                      onChange={() => toggleDietaryPreference(option.value)}
-                    />
-                    <span aria-hidden="true">{option.icon}</span>
-                    <strong>{option.label}</strong>
-                  </label>
-                ))}
-              </div>
-
-              {dietaryPreferences.length > 0 ? (
-                <div
-                  className="meal-arrangement"
-                  role="radiogroup"
-                  aria-label="Cómo resolver tu comida"
-                >
-                  <button
-                    type="button"
-                    role="radio"
-                    aria-checked={mealArrangement === "SELF_MANAGED"}
-                    className={
-                      mealArrangement === "SELF_MANAGED" ? "selected" : ""
-                    }
-                    onClick={() => setMealArrangement("SELF_MANAGED")}
-                  >
-                    <strong>Me ocupo yo</strong>
-                    <small>Llevo o gestiono mi propia comida.</small>
-                  </button>
-                  <button
-                    type="button"
-                    role="radio"
-                    aria-checked={mealArrangement === "GROUP_MENU"}
-                    className={
-                      mealArrangement === "GROUP_MENU" ? "selected" : ""
-                    }
-                    onClick={() => setMealArrangement("GROUP_MENU")}
-                  >
-                    <strong>Necesito ayuda del grupo</strong>
-                    <small>Hay que sumar una opción apta al menú.</small>
-                  </button>
-                </div>
-              ) : null}
-
-              <button
-                type="button"
-                className="save-dietary-button"
-                disabled={isDietarySaving}
-                onClick={saveDietaryProfile}
-              >
-                {isDietarySaving
-                  ? "Guardando…"
-                  : currentParticipant
-                    ? "Guardar mi elección"
-                    : "Entrá para completar esto"}
-              </button>
-            </div>
-
-            <div className="dietary-summary">
-              <strong>Menús a tener en cuenta</strong>
-              {participants.some(
-                (participant) =>
-                  (participant.dietaryPreferences?.length ?? 0) > 0,
-              ) ? (
-                <ul>
-                  {participants
-                    .filter(
-                      (participant) =>
-                        (participant.dietaryPreferences?.length ?? 0) > 0,
-                    )
-                    .map((participant) => (
-                      <li key={participant.id}>
-                        <span>{participant.name}</span>
-                        <b>
-                          {participant.dietaryPreferences
-                            ?.map((preference) => dietaryLabels.get(preference))
-                            .join(" · ")}
-                        </b>
-                        <small>
-                          {participant.mealArrangement === "SELF_MANAGED"
-                            ? "Se ocupa de su comida"
-                            : "El grupo busca una opción"}
-                        </small>
-                      </li>
-                    ))}
-                </ul>
-              ) : (
-                <p>Todavía nadie indicó una necesidad especial.</p>
-              )}
-            </div>
-          </div>
-        </section>
-      ) : null}
 
       <div className="purchase-layout">
         <div className="purchase-list-card">

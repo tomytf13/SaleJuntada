@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "lint:ci": "eslint . --max-warnings=0",
-    "test": "vitest run",
+    "test": "NODE_OPTIONS=--no-experimental-webstorage vitest run",
     "preview": "vite preview",
     "demo:live": "node scripts/simulate-live-gathering.mjs"
   },

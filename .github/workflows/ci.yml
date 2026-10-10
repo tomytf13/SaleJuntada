@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Sólo validación: este workflow no despliega nada.
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sale-juntada-back
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: sale-juntada-back/package-lock.json
+      # `postinstall` corre `prisma generate`, que no necesita base de datos.
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sale-juntada-front
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: sale-juntada-front/package-lock.json
+      - run: npm ci
+      - run: npm run lint:ci
+      - run: npm test
+      - run: npm run build
+
+  e2e:
+    name: E2E
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            sale-juntada-front/package-lock.json
+            sale-juntada-e2e/package-lock.json
+      - run: npm ci
+        working-directory: sale-juntada-front
+      - run: npm ci
+        working-directory: sale-juntada-e2e
+      - run: npx playwright install --with-deps chromium
+        working-directory: sale-juntada-e2e
+      # Los tests de humo interceptan la API con `page.route`, así que sólo
+      # necesitan el dev server de Vite —que Playwright levanta solo— y
+      # ningún secreto. El caso que sí depende de PostgreSQL se saltea a
+      # menos que se pase E2E_REAL_DB=1, y ese no corre acá.
+      - run: npx playwright test --project="Desktop Chrome"
+        working-directory: sale-juntada-e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: sale-juntada-e2e/playwright-report
+          retention-days: 7

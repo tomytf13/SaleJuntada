@@ -116,8 +116,14 @@ function GatheringManagementForm({
     const input: UpdateGatheringInput = {
       title: title.trim(),
       locationHint: location.trim(),
-      windowStart: dateAtMinutes(from, preview.start).toISOString(),
-      windowEnd: dateAtMinutes(to, preview.end).toISOString(),
+      windowStart:
+        from !== values.from || startTime !== values.startTime
+          ? dateAtMinutes(from, preview.start).toISOString()
+          : gathering.windowStart,
+      windowEnd:
+        to !== values.to || endTime !== values.endTime
+          ? dateAtMinutes(to, preview.end).toISOString()
+          : gathering.windowEnd,
       durationMinutes: duration,
       dailyStartMinutes: preview.start,
       dailyEndMinutes: preview.end,

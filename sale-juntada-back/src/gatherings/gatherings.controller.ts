@@ -1,4 +1,7 @@
+import { GatheringServiceKey } from "@prisma/client";
+import { SetGatheringServiceDto } from "./dto/set-gathering-service.dto";
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -6,20 +9,29 @@ import {
   Header,
   Headers,
   Param,
+  ParseEnumPipe,
   Patch,
   Post,
   Put,
+  UseGuards,
 } from "@nestjs/common";
-import { ApiTags } from "@nestjs/swagger";
+import { ApiHeader, ApiTags } from "@nestjs/swagger";
+import { Throttle } from "@nestjs/throttler";
 import { SupabaseAuthService } from "../auth/supabase-auth.service";
+import { ParticipantGuard } from "../participants/participant.guard";
 import { AddExpenseDto } from "./dto/add-expense.dto";
 import { AddParticipantDto } from "./dto/add-participant.dto";
 import { AuthParticipantDto } from "./dto/auth-participant.dto";
 import { ConfirmTransferDto } from "./dto/confirm-transfer.dto";
 import { CreateGatheringDto } from "./dto/create-gathering.dto";
 import { FinalizeGatheringDto } from "./dto/finalize-gathering.dto";
-import { GoogleParticipantDto } from "./dto/google-participant.dto";
 import { SetAvailabilityDto } from "./dto/set-availability.dto";
+import { ChecklistService } from "./checklist.service";
+import {
+  CreateChecklistItemDto,
+  UpdateChecklistItemDto,
+} from "./dto/checklist.dto";
+import { SetRsvpDto } from "./dto/set-rsvp.dto";
 import { UpdateDietaryProfileDto } from "./dto/update-dietary-profile.dto";
 import { UpdateExpenseDto } from "./dto/update-expense.dto";
 import { UpdateGatheringDto } from "./dto/update-gathering.dto";
@@ -30,6 +42,7 @@ import { UpdatePurchaseResponsibilityDto } from "./dto/update-purchase-responsib
 import { UpsertPurchaseContributionDto } from "./dto/upsert-purchase-contribution.dto";
 import { GatheringsGateway } from "./gatherings.gateway";
 import { GatheringsService } from "./gatherings.service";
+import { RsvpService } from "../rsvp/rsvp.service";
 
 @ApiTags("gatherings")
 @Controller("gatherings")
@@ -38,8 +51,14 @@ export class GatheringsController {
     private readonly gatheringsService: GatheringsService,
     private readonly gatheringsGateway: GatheringsGateway,
     private readonly authService: SupabaseAuthService,
+    private readonly rsvpService: RsvpService,
+    private readonly checklistService: ChecklistService,
   ) {}
 
+  // Crear una juntada escribe varias filas y genera un slug: es la operación
+  // más cara del endpoint público. 10 por minuto alcanza de sobra para uso
+  // legítimo y corta la creación masiva automatizada.
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post()
   async create(
     @Headers("authorization") authorization: string | undefined,
@@ -49,31 +68,47 @@ export class GatheringsController {
     return this.gatheringsService.create(dto, identity);
   }
 
+  /**
+   * Vista de la juntada. Sin `x-participant-token` devuelve sólo lo
+   * necesario para decidir sumarse; con un token válido, la juntada
+   * completa. Ver `GatheringsService.getBySlug`.
+   */
+  @ApiHeader({
+    name: "x-participant-token",
+    required: false,
+    description: "Con un token válido la respuesta incluye los datos privados",
+  })
   @Get(":slug")
-  getBySlug(@Param("slug") slug: string) {
-    return this.gatheringsService.getBySlug(slug);
+  getBySlug(
+    @Param("slug") slug: string,
+    @Headers("x-participant-token") participantToken: string | undefined,
+  ) {
+    return this.gatheringsService.getBySlug(slug, participantToken);
   }
 
+  // Catálogo de productos: es contenido estático de la app, sin datos de
+  // ninguna persona. Se mantiene público a propósito.
   @Get("catalog/purchase")
   @Header("Cache-Control", "public, max-age=300, stale-while-revalidate=3600")
   getPurchaseCatalog() {
     return this.gatheringsService.getPurchaseCatalog();
   }
 
+  // Sumarse no exige credencial por diseño (ese es el punto del link), así
+  // que es el endpoint más expuesto a inflar un grupo con gente falsa. El
+  // tope de participantes ya lo limita; esto además frena el ritmo.
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post(":gatheringId/participants")
-  addParticipant(
+  async addParticipant(
     @Param("gatheringId") gatheringId: string,
     @Body() dto: AddParticipantDto,
   ) {
-    return this.gatheringsService.addParticipant(gatheringId, dto);
-  }
-
-  @Post(":gatheringId/participants/google")
-  addGoogleParticipant(
-    @Param("gatheringId") gatheringId: string,
-    @Body() dto: GoogleParticipantDto,
-  ) {
-    return this.gatheringsService.addGoogleParticipant(gatheringId, dto);
+    const participant = await this.gatheringsService.addParticipant(
+      gatheringId,
+      dto,
+    );
+    this.gatheringsGateway.participantsChanged(gatheringId);
+    return participant;
   }
 
   @Post(":gatheringId/participants/auth")
@@ -83,11 +118,14 @@ export class GatheringsController {
     @Body() dto: AuthParticipantDto,
   ) {
     const identity = await this.authService.requireIdentity(authorization);
-    return this.gatheringsService.addAuthenticatedParticipant(
-      gatheringId,
-      identity,
-      dto,
-    );
+    const participant =
+      await this.gatheringsService.addAuthenticatedParticipant(
+        gatheringId,
+        identity,
+        dto,
+      );
+    this.gatheringsGateway.participantsChanged(gatheringId);
+    return participant;
   }
 
   @Post(":gatheringId/participants/:participantId/auth-link")
@@ -107,20 +145,110 @@ export class GatheringsController {
   }
 
   @Put(":gatheringId/participants/:participantId/availability")
-  setAvailability(
+  async setAvailability(
     @Param("gatheringId") gatheringId: string,
     @Param("participantId") participantId: string,
     @Headers("x-participant-token") participantToken: string | undefined,
     @Body() dto: SetAvailabilityDto,
   ) {
-    return this.gatheringsService.setAvailability(
+    const participant = await this.gatheringsService.setAvailability(
       gatheringId,
       participantId,
       participantToken,
       dto,
     );
+    this.gatheringsGateway.availabilityChanged(gatheringId);
+    return participant;
   }
 
+  /**
+   * Responde la invitación.
+   *
+   * Sólo aplica cuando la juntada tiene fecha confirmada: mientras el grupo
+   * la está buscando, la pregunta es "¿cuándo podés?" y no "¿venís?".
+   */
+  @Put(":gatheringId/participants/:participantId/rsvp")
+  async setRsvp(
+    @Param("gatheringId") gatheringId: string,
+    @Param("participantId") participantId: string,
+    @Headers("x-participant-token") participantToken: string | undefined,
+    @Body() dto: SetRsvpDto,
+  ) {
+    const result = await this.rsvpService.setRsvp(
+      gatheringId,
+      participantId,
+      participantToken,
+      dto,
+    );
+    this.gatheringsGateway.rsvpChanged(gatheringId, {
+      participantId: result.participantId,
+      participantName: result.participantName,
+      rsvpStatus: result.rsvpStatus,
+      plusOnes: result.plusOnes,
+    });
+    return result;
+  }
+
+  @UseGuards(ParticipantGuard)
+  @Get(":gatheringId/checklist")
+  listChecklist(@Param("gatheringId") gatheringId: string) {
+    return this.checklistService.list(gatheringId);
+  }
+
+  @Post(":gatheringId/participants/:participantId/checklist")
+  async createChecklistItem(
+    @Param("gatheringId") gatheringId: string,
+    @Param("participantId") participantId: string,
+    @Headers("x-participant-token") token: string | undefined,
+    @Body() dto: CreateChecklistItemDto,
+  ) {
+    const item = await this.checklistService.create(
+      gatheringId,
+      participantId,
+      token,
+      dto,
+    );
+    this.gatheringsGateway.checklistChanged(gatheringId);
+    return item;
+  }
+
+  @Patch(":gatheringId/participants/:participantId/checklist/:itemId")
+  async updateChecklistItem(
+    @Param("gatheringId") gatheringId: string,
+    @Param("participantId") participantId: string,
+    @Param("itemId") itemId: string,
+    @Headers("x-participant-token") token: string | undefined,
+    @Body() dto: UpdateChecklistItemDto,
+  ) {
+    const item = await this.checklistService.update(
+      gatheringId,
+      participantId,
+      token,
+      itemId,
+      dto,
+    );
+    this.gatheringsGateway.checklistChanged(gatheringId);
+    return item;
+  }
+
+  @Delete(":gatheringId/participants/:participantId/checklist/:itemId")
+  async removeChecklistItem(
+    @Param("gatheringId") gatheringId: string,
+    @Param("participantId") participantId: string,
+    @Param("itemId") itemId: string,
+    @Headers("x-participant-token") token: string | undefined,
+  ) {
+    const result = await this.checklistService.remove(
+      gatheringId,
+      participantId,
+      token,
+      itemId,
+    );
+    this.gatheringsGateway.checklistChanged(gatheringId);
+    return result;
+  }
+
+  @UseGuards(ParticipantGuard)
   @Get(":gatheringId/matches")
   getMatches(@Param("gatheringId") gatheringId: string) {
     return this.gatheringsService.getMatches(gatheringId);
@@ -158,6 +286,26 @@ export class GatheringsController {
     );
     this.gatheringsGateway.gatheringChanged(gatheringId, "updated");
     return gathering;
+  }
+
+  @Put(":gatheringId/participants/:participantId/services/:service")
+  async setService(
+    @Param("gatheringId") gatheringId: string,
+    @Param("participantId") participantId: string,
+    @Param("service", new ParseEnumPipe(GatheringServiceKey))
+    service: GatheringServiceKey,
+    @Headers("x-participant-token") token: string | undefined,
+    @Body() dto: SetGatheringServiceDto,
+  ) {
+    const result = await this.gatheringsService.setGatheringService(
+      gatheringId,
+      participantId,
+      token,
+      service,
+      dto.enabled,
+    );
+    this.gatheringsGateway.gatheringChanged(gatheringId, "services");
+    return result;
   }
 
   @Delete(":gatheringId/participants/:participantId/settings")
@@ -225,6 +373,7 @@ export class GatheringsController {
     return { paymentAlias: result.paymentAlias };
   }
 
+  @UseGuards(ParticipantGuard)
   @Get(":gatheringId/purchase")
   getPurchasePlan(@Param("gatheringId") gatheringId: string) {
     return this.gatheringsService.getPurchasePlan(gatheringId);
@@ -333,17 +482,25 @@ export class GatheringsController {
     return plan;
   }
 
+  @ApiHeader({
+    name: "Idempotency-Key",
+    required: true,
+    description:
+      "UUID por intento lógico. Reintentar con la misma clave devuelve el gasto ya creado en vez de duplicarlo.",
+  })
   @Post(":gatheringId/participants/:participantId/expenses")
   async addExpense(
     @Param("gatheringId") gatheringId: string,
     @Param("participantId") participantId: string,
     @Headers("x-participant-token") participantToken: string | undefined,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
     @Body() dto: AddExpenseDto,
   ) {
     const expense = await this.gatheringsService.addExpense(
       gatheringId,
       participantId,
       participantToken,
+      this.requireIdempotencyKey(idempotencyKey),
       dto,
     );
     this.gatheringsGateway.expensesChanged(gatheringId, expense.paidBy.name);
@@ -365,10 +522,7 @@ export class GatheringsController {
       expenseId,
       dto,
     );
-    this.gatheringsGateway.expensesChanged(
-      gatheringId,
-      result.participantName,
-    );
+    this.gatheringsGateway.expensesChanged(gatheringId, result.participantName);
     return result.expense;
   }
 
@@ -385,13 +539,11 @@ export class GatheringsController {
       participantToken,
       expenseId,
     );
-    this.gatheringsGateway.expensesChanged(
-      gatheringId,
-      result.participantName,
-    );
+    this.gatheringsGateway.expensesChanged(gatheringId, result.participantName);
     return { id: result.id };
   }
 
+  @UseGuards(ParticipantGuard)
   @Get(":gatheringId/expenses/settlement")
   getExpenseSettlement(@Param("gatheringId") gatheringId: string) {
     return this.gatheringsService.getExpenseSettlement(gatheringId);
@@ -430,5 +582,25 @@ export class GatheringsController {
       confirmation.fromParticipant.name,
     );
     return confirmation;
+  }
+
+  /**
+   * La clave de idempotencia es obligatoria: si fuera opcional, un cliente
+   * que se olvide de mandarla perdería la protección sin que nadie se
+   * entere. Es preferible un 400 ruidoso a un gasto duplicado en silencio.
+   */
+  private requireIdempotencyKey(value: string | undefined) {
+    const key = value?.trim();
+    if (!key) {
+      throw new BadRequestException(
+        "Falta la cabecera Idempotency-Key para cargar el gasto",
+      );
+    }
+    if (key.length > 200) {
+      throw new BadRequestException(
+        "La cabecera Idempotency-Key es demasiado larga",
+      );
+    }
+    return key;
   }
 }

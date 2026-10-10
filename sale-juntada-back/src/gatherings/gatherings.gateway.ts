@@ -4,13 +4,20 @@ import {
   WebSocketGateway,
   WebSocketServer,
 } from "@nestjs/websockets";
+import { RsvpStatus } from "@prisma/client";
 import { Server, Socket } from "socket.io";
-import { PrismaService } from "../prisma/prisma.service";
+import { ParticipantAuthService } from "../participants/participant-auth.service";
 
 type LiveMember = {
   gatheringId: string;
   participantId: string;
   name: string;
+};
+
+type WatchPayload = {
+  gatheringId?: string;
+  participantId?: string;
+  participantToken?: string;
 };
 
 @WebSocketGateway({
@@ -32,48 +39,67 @@ export class GatheringsGateway implements OnGatewayDisconnect {
 
   private readonly members = new Map<string, LiveMember>();
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly participantAuth: ParticipantAuthService) {}
 
+  /**
+   * Suscribe el socket a los eventos de la juntada.
+   *
+   * Antes alcanzaba con mandar un `gatheringId`: cualquiera que lo
+   * conociera entraba a la sala y recibía la presencia con nombres, quién
+   * estaba escribiendo un gasto y cada cambio de la compra. Ahora exige la
+   * misma credencial que el resto de la API, resuelta por el mismo servicio
+   * que usan los endpoints HTTP para que no puedan divergir.
+   */
   @SubscribeMessage("gathering:watch")
-  async watch(client: Socket, payload: { gatheringId: string }) {
-    if (!payload.gatheringId) return;
-    await client.join(this.room(payload.gatheringId));
-    this.broadcastPresence(payload.gatheringId);
+  async watch(client: Socket, payload: WatchPayload) {
+    const member = await this.authorize(payload);
+    if (!member) return;
+    await client.join(this.room(member.gatheringId));
+    this.broadcastPresence(member.gatheringId);
   }
 
+  /** Igual que `watch`, y además publica la presencia de esta persona. */
   @SubscribeMessage("gathering:join")
-  async join(
-    client: Socket,
-    payload: {
-      gatheringId: string;
-      participantId: string;
-      participantToken: string;
-    },
-  ) {
-    if (
-      !payload.gatheringId ||
-      !payload.participantId ||
-      !payload.participantToken
-    ) {
-      return;
+  async join(client: Socket, payload: WatchPayload) {
+    const member = await this.authorize(payload);
+    if (!member) return { joined: false };
+    this.members.set(client.id, member);
+    await client.join(this.room(member.gatheringId));
+    this.broadcastPresence(member.gatheringId);
+    return { joined: true };
+  }
+
+  participantsChanged(gatheringId: string) {
+    this.server.to(this.room(gatheringId)).emit("participants:changed");
+  }
+
+  availabilityChanged(gatheringId: string) {
+    this.server.to(this.room(gatheringId)).emit("availability:changed");
+  }
+
+  checklistChanged(gatheringId: string) {
+    this.server.to(this.room(gatheringId)).emit("checklist:changed");
+  }
+
+  private async authorize(payload: WatchPayload): Promise<LiveMember | null> {
+    if (!payload?.gatheringId || !payload.participantToken) return null;
+
+    const participant = await this.participantAuth.findByToken(
+      payload.gatheringId,
+      payload.participantToken,
+    );
+    if (!participant) return null;
+    // El cliente manda `participantId` además del token; si no coinciden es
+    // una inconsistencia y no una suscripción legítima.
+    if (payload.participantId && payload.participantId !== participant.id) {
+      return null;
     }
-    const participant = await this.prisma.participant.findFirst({
-      where: {
-        id: payload.participantId,
-        gatheringId: payload.gatheringId,
-        responseToken: payload.participantToken,
-      },
-      select: { id: true, name: true },
-    });
-    if (!participant) return;
-    const member = {
+
+    return {
       gatheringId: payload.gatheringId,
       participantId: participant.id,
       name: participant.name,
     };
-    this.members.set(client.id, member);
-    await client.join(this.room(payload.gatheringId));
-    this.broadcastPresence(payload.gatheringId);
   }
 
   @SubscribeMessage("expense:typing")
@@ -126,6 +152,26 @@ export class GatheringsGateway implements OnGatewayDisconnect {
     });
   }
 
+  /**
+   * Avisa que alguien respondió la invitación.
+   *
+   * Sólo llega a la sala autenticada: después de P0, quien tiene el link
+   * pero no se sumó no entra al room y por lo tanto no ve las respuestas
+   * del grupo. El payload es el mínimo para que la UI actualice sin
+   * recargar; el resumen completo lo trae `getBySlug`.
+   */
+  rsvpChanged(
+    gatheringId: string,
+    activity: {
+      participantId: string;
+      participantName: string;
+      rsvpStatus: RsvpStatus | null;
+      plusOnes: number;
+    },
+  ) {
+    this.server.to(this.room(gatheringId)).emit("rsvp:changed", activity);
+  }
+
   dietaryChanged(gatheringId: string, participantName: string) {
     this.server.to(this.room(gatheringId)).emit("dietary:changed", {
       participantName,
@@ -134,7 +180,7 @@ export class GatheringsGateway implements OnGatewayDisconnect {
 
   gatheringChanged(
     gatheringId: string,
-    action: "confirmed" | "updated" | "cancelled",
+    action: "confirmed" | "updated" | "cancelled" | "services",
   ) {
     this.server.to(this.room(gatheringId)).emit("gathering:changed", {
       action,

@@ -2,7 +2,8 @@ const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001/api";
 export const SOCKET_URL =
   import.meta.env.VITE_SOCKET_URL ?? API_URL.replace(/\/api\/?$/, "");
 
-export type CreateGatheringInput = {
+/** Lo que toda juntada necesita, sin importar si ya tiene fecha. */
+type CreateGatheringBase = {
   templateGatheringId?: string;
   title: string;
   organizerName: string;
@@ -10,14 +11,36 @@ export type CreateGatheringInput = {
   locationHint?: string;
   locationLatitude?: number;
   locationLongitude?: number;
-  windowStart: string;
-  windowEnd: string;
   durationMinutes?: number;
   dailyStartMinutes?: number;
   dailyEndMinutes?: number;
   slotStepMinutes?: number;
   timeZone?: string;
 };
+
+/**
+ * El grupo ya sabe cuándo es. El backend deriva la ventana del día local de
+ * `startsAt`, así que no hay que mandarla — y mandarla es un error, no una
+ * preferencia: son dos modos distintos y el servidor rechaza la mezcla.
+ */
+export type FixedDateGatheringInput = CreateGatheringBase & {
+  startsAt: string;
+  windowStart?: never;
+  windowEnd?: never;
+};
+
+/**
+ * Todavía no saben cuándo. La ventana la elige quien crea: el backend no
+ * inventa ninguna.
+ */
+export type FlexibleDateGatheringInput = CreateGatheringBase & {
+  startsAt?: never;
+  windowStart: string;
+  windowEnd: string;
+};
+
+export type CreateGatheringInput =
+  FixedDateGatheringInput | FlexibleDateGatheringInput;
 
 /**
  * Horario candidato. Lo calcula el backend en la zona horaria de la juntada,
@@ -30,11 +53,58 @@ export type GatheringSlot = {
   endsAt: string;
 };
 
+/**
+ * Estado de la juntada.
+ *
+ * `OPEN` = todavía busca fecha (hay encuesta de disponibilidad, no hay RSVP).
+ * `CONFIRMED` = tiene fecha en `finalizedStart` (recién ahí existe el RSVP).
+ *
+ * `DRAFT` y `PROPOSED` se eliminaron en P1.1: nunca se escribieron ni se
+ * leyeron en ninguna parte del producto.
+ */
+export type GatheringStatus = "OPEN" | "CONFIRMED" | "CANCELLED";
+export type GatheringServiceKey =
+  "compra" | "pendientes" | "alimentacion" | "cuentas" | "juegos";
+
+/** Respuesta a la invitación. Sólo aplica con fecha confirmada. */
+export type RsvpStatus = "GOING" | "MAYBE" | "NOT_GOING";
+
+/**
+ * Recuento de asistencia. Sólo llega en la vista de participante: cómo
+ * respondió el grupo es información del grupo, no del link.
+ */
+export type RsvpSummary = {
+  going: number;
+  maybe: number;
+  notGoing: number;
+  /** Participantes que todavía no respondieron. */
+  pending: number;
+  /** Gente que va a haber: suma de `1 + plusOnes` entre los GOING. */
+  goingHeadcount: number;
+};
+
 export type Gathering = {
   id: string;
   slug: string;
   title: string;
-  organizerName: string;
+  /**
+   * Sólo llega en la vista de participante. Quien abre el link sin
+   * credencial no recibe ninguna identidad del grupo, tampoco la de quien
+   * organiza.
+   */
+  organizerName?: string;
+  /**
+   * `true` cuando la respuesta vino con un token válido. Con `false`,
+   * `participants` llega vacío y las coordenadas en `null` aunque la
+   * juntada tenga ubicación cargada.
+   */
+  isParticipant?: boolean;
+  viewerParticipantId?: string | null;
+  participantCount?: number;
+  /** Sólo en la vista de participante. */
+  rsvpSummary?: RsvpSummary;
+  /** Configuración privada. Ausente en la invitación pública. */
+  disabledServices?: GatheringServiceKey[];
   locationHint?: string | null;
   locationLatitude?: number | null;
   locationLongitude?: number | null;
@@ -46,12 +116,11 @@ export type Gathering = {
   slotStepMinutes?: number;
   timeZone?: string;
   slots?: GatheringSlot[];
-  status: "DRAFT" | "OPEN" | "PROPOSED" | "CONFIRMED" | "CANCELLED";
+  status: GatheringStatus;
   finalizedStart?: string | null;
   finalizedEnd?: string | null;
   finalizedLocation?: string | null;
   participants: Participant[];
-  proposals?: unknown[];
 };
 
 export type Participant = {
@@ -62,9 +131,29 @@ export type Participant = {
   dietaryPreferences?: DietaryPreference[];
   mealArrangement?: MealArrangement | null;
   responseToken?: string;
+  /**
+   * `null` significa dos cosas según la juntada: si no tiene fecha
+   * (`finalizedStart === null`), el RSVP no aplica; si la tiene, esta
+   * persona todavía no respondió.
+   */
+  rsvpStatus?: RsvpStatus | null;
+  plusOnes?: number;
+  rsvpAt?: string | null;
   expensesReadyAt?: string | null;
   availabilities?: Availability[];
 };
+
+export type ChecklistItem = {
+  id: string;
+  gatheringId: string;
+  label: string;
+  assignedParticipantId: string | null;
+  assignee: Pick<Participant, "id" | "name" | "avatarUrl"> | null;
+  isReady: boolean;
+};
+
+export type ChecklistAction =
+  "claim" | "release" | "ready" | "pending" | "assign";
 
 export type Availability = {
   id: string;
@@ -174,7 +263,7 @@ export type GatheringHistoryItem = {
   id: string;
   slug: string;
   title: string;
-  status: "DRAFT" | "OPEN" | "PROPOSED" | "CONFIRMED" | "CANCELLED";
+  status: GatheringStatus;
   organizerName: string;
   locationHint?: string | null;
   finalizedLocation?: string | null;
@@ -323,6 +412,22 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 let purchaseCatalogRequest: Promise<PurchaseCatalog> | null = null;
 
 export const gatheringService = {
+  setGatheringService(
+    gatheringId: string,
+    participantId: string,
+    token: string,
+    service: GatheringServiceKey,
+    enabled: boolean,
+  ) {
+    return request<{ disabledServices: GatheringServiceKey[] }>(
+      `/gatherings/${gatheringId}/participants/${participantId}/services/${service}`,
+      {
+        method: "PUT",
+        headers: { "x-participant-token": token },
+        body: JSON.stringify({ enabled }),
+      },
+    );
+  },
   searchLocations(query: string) {
     return request<LocationSearchResult[]>(
       `/locations/search?q=${encodeURIComponent(query)}`,
@@ -352,8 +457,72 @@ export const gatheringService = {
     });
   },
 
-  getBySlug(slug: string) {
-    return request<Gathering>(`/gatherings/${slug}`);
+  /**
+   * Trae la juntada. Con `participantToken` el backend responde la vista
+   * completa (disponibilidad del grupo, coordenadas exactas); sin token,
+   * sólo lo necesario para decidir sumarse.
+   */
+  getBySlug(slug: string, participantToken?: string) {
+    return request<Gathering>(`/gatherings/${slug}`, {
+      headers: participantToken
+        ? { "x-participant-token": participantToken }
+        : undefined,
+    });
+  },
+
+  getChecklist(gatheringId: string, token: string) {
+    return request<ChecklistItem[]>(`/gatherings/${gatheringId}/checklist`, {
+      headers: { "x-participant-token": token },
+    });
+  },
+
+  addChecklistItem(
+    gatheringId: string,
+    participantId: string,
+    token: string,
+    label: string,
+  ) {
+    return request<ChecklistItem>(
+      `/gatherings/${gatheringId}/participants/${participantId}/checklist`,
+      {
+        method: "POST",
+        headers: { "x-participant-token": token },
+        body: JSON.stringify({ label }),
+      },
+    );
+  },
+
+  updateChecklistItem(
+    gatheringId: string,
+    participantId: string,
+    token: string,
+    itemId: string,
+    action: ChecklistAction,
+    assignedParticipantId?: string,
+  ) {
+    return request<ChecklistItem>(
+      `/gatherings/${gatheringId}/participants/${participantId}/checklist/${itemId}`,
+      {
+        method: "PATCH",
+        headers: { "x-participant-token": token },
+        body: JSON.stringify({ action, assignedParticipantId }),
+      },
+    );
+  },
+
+  removeChecklistItem(
+    gatheringId: string,
+    participantId: string,
+    token: string,
+    itemId: string,
+  ) {
+    return request<{ deleted: boolean }>(
+      `/gatherings/${gatheringId}/participants/${participantId}/checklist/${itemId}`,
+      {
+        method: "DELETE",
+        headers: { "x-participant-token": token },
+      },
+    );
   },
 
   addParticipant(
@@ -366,16 +535,6 @@ export const gatheringService = {
       method: "POST",
       body: JSON.stringify({ name, avatarUrl, allowDuplicateName }),
     });
-  },
-
-  addGoogleParticipant(gatheringId: string, credential: string) {
-    return request<Participant>(
-      `/gatherings/${gatheringId}/participants/google`,
-      {
-        method: "POST",
-        body: JSON.stringify({ credential }),
-      },
-    );
   },
 
   setAvailability(
@@ -394,8 +553,37 @@ export const gatheringService = {
     );
   },
 
-  getMatches(gatheringId: string) {
-    return request<Match[]>(`/gatherings/${gatheringId}/matches`);
+  /**
+   * Responde la invitación.
+   *
+   * Sólo funciona con la juntada ya confirmada: si todavía no tiene fecha,
+   * el backend devuelve 409. Es idempotente, así que reintentar es seguro y
+   * no necesita clave de idempotencia.
+   */
+  setRsvp(
+    gatheringId: string,
+    participantId: string,
+    participantToken: string,
+    input: { status: RsvpStatus; plusOnes?: number },
+  ) {
+    return request<{
+      participantId: string;
+      participantName: string;
+      rsvpStatus: RsvpStatus;
+      plusOnes: number;
+      rsvpAt: string;
+      rsvpSummary: RsvpSummary;
+    }>(`/gatherings/${gatheringId}/participants/${participantId}/rsvp`, {
+      method: "PUT",
+      headers: { "x-participant-token": participantToken },
+      body: JSON.stringify(input),
+    });
+  },
+
+  getMatches(gatheringId: string, participantToken: string) {
+    return request<Match[]>(`/gatherings/${gatheringId}/matches`, {
+      headers: { "x-participant-token": participantToken },
+    });
   },
 
   finalizeGathering(
@@ -481,8 +669,10 @@ export const gatheringService = {
     );
   },
 
-  getPurchasePlan(gatheringId: string) {
-    return request<PurchasePlan>(`/gatherings/${gatheringId}/purchase`);
+  getPurchasePlan(gatheringId: string, participantToken: string) {
+    return request<PurchasePlan>(`/gatherings/${gatheringId}/purchase`, {
+      headers: { "x-participant-token": participantToken },
+    });
   },
 
   getPurchaseCatalog() {
@@ -588,17 +778,29 @@ export const gatheringService = {
     );
   },
 
+  /**
+   * Carga un gasto.
+   *
+   * `idempotencyKey` identifica el **intento lógico**, no la llamada: quien
+   * reintenta el mismo gasto tiene que mandar la misma clave para que el
+   * backend devuelva el gasto ya creado en vez de duplicarlo. Un gasto
+   * nuevo siempre lleva una clave nueva.
+   */
   addExpense(
     gatheringId: string,
     participantId: string,
     participantToken: string,
+    idempotencyKey: string,
     input: { description: string; amountCents: number },
   ) {
     return request<Expense>(
       `/gatherings/${gatheringId}/participants/${participantId}/expenses`,
       {
         method: "POST",
-        headers: { "x-participant-token": participantToken },
+        headers: {
+          "x-participant-token": participantToken,
+          "Idempotency-Key": idempotencyKey,
+        },
         body: JSON.stringify(input),
       },
     );
@@ -636,9 +838,10 @@ export const gatheringService = {
     );
   },
 
-  getExpenseSettlement(gatheringId: string) {
+  getExpenseSettlement(gatheringId: string, participantToken: string) {
     return request<ExpenseSettlement>(
       `/gatherings/${gatheringId}/expenses/settlement`,
+      { headers: { "x-participant-token": participantToken } },
     );
   },
 

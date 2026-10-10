@@ -1,5 +1,41 @@
+import { Prisma } from "@prisma/client";
+import { ParticipantAuthService } from "../participants/participant-auth.service";
+import { RsvpService } from "../rsvp/rsvp.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { GatheringsService, MAX_PARTICIPANTS } from "./gatherings.service";
+
+/**
+ * Arma el servicio con un `ParticipantAuthService` real sobre el mismo
+ * mock de Prisma. Usar el servicio de verdad —y no un doble permisivo—
+ * hace que estos tests sigan ejercitando la autorización: si alguien
+ * aflojara la comparación de tokens, fallarían acá.
+ */
+function buildService(prisma: PrismaService) {
+  // Los dobles de escritura participan del mismo límite transaccional que producción.
+  const addServiceLock = (tx: Prisma.TransactionClient) => {
+    tx.$queryRaw ??= jest
+      .fn()
+      .mockResolvedValue([{ status: "CONFIRMED", disabledServices: [] }]);
+    return tx;
+  };
+  const previousTransaction = (
+    prisma.$transaction as jest.Mock | undefined
+  )?.getMockImplementation();
+  prisma.$transaction = jest.fn(
+    (callback: (tx: Prisma.TransactionClient) => unknown) =>
+      previousTransaction
+        ? previousTransaction((tx: Prisma.TransactionClient) =>
+            callback(addServiceLock(tx)),
+          )
+        : callback(addServiceLock(prisma)),
+  ) as unknown as PrismaService["$transaction"];
+
+  return new GatheringsService(
+    prisma,
+    new ParticipantAuthService(prisma),
+    new RsvpService(prisma, new ParticipantAuthService(prisma)),
+  );
+}
 
 describe("GatheringsService expense settlement", () => {
   it("divide en partes iguales y genera transferencias directas", async () => {
@@ -50,7 +86,7 @@ describe("GatheringsService expense settlement", () => {
         }),
       },
     } as unknown as PrismaService;
-    const service = new GatheringsService(prisma);
+    const service = buildService(prisma);
 
     const result = await service.getExpenseSettlement("gathering");
 
@@ -111,7 +147,7 @@ describe("GatheringsService expense settlement", () => {
         }),
       },
     } as unknown as PrismaService;
-    const service = new GatheringsService(prisma);
+    const service = buildService(prisma);
 
     const result = await service.getExpenseSettlement("gathering");
 
@@ -172,7 +208,7 @@ describe("GatheringsService expense settlement", () => {
         }),
       },
     } as unknown as PrismaService;
-    const service = new GatheringsService(prisma);
+    const service = buildService(prisma);
 
     const result = await service.getExpenseSettlement("gathering");
 
@@ -207,7 +243,7 @@ describe("GatheringsService dietary profile", () => {
         mealArrangement: "GROUP_MENU",
       }),
     };
-    const service = new GatheringsService({
+    const service = buildService({
       participant,
     } as unknown as PrismaService);
 
@@ -241,12 +277,9 @@ describe("GatheringsService dietary profile", () => {
     } as unknown as PrismaService;
 
     await expect(
-      new GatheringsService(prisma).updateDietaryProfile(
-        "gathering",
-        "guest",
-        "token",
-        { dietaryPreferences: ["VEGAN"] },
-      ),
+      buildService(prisma).updateDietaryProfile("gathering", "guest", "token", {
+        dietaryPreferences: ["VEGAN"],
+      }),
     ).rejects.toThrow("Elegí si vas a gestionar tu comida");
   });
 });
@@ -261,7 +294,7 @@ describe("GatheringsService purchase plan", () => {
         }),
       },
     } as unknown as PrismaService;
-    const service = new GatheringsService(prisma);
+    const service = buildService(prisma);
 
     const result = await service.getPurchasePlan("gathering");
 
@@ -284,7 +317,7 @@ describe("GatheringsService purchase plan", () => {
         }),
       },
     } as unknown as PrismaService;
-    const service = new GatheringsService(prisma);
+    const service = buildService(prisma);
 
     await expect(
       service.updatePurchasePlan("gathering", "guest", "token", {
@@ -331,7 +364,7 @@ describe("GatheringsService purchase plan", () => {
         callback({ purchasePlan, purchaseItem }),
       ),
     } as unknown as PrismaService;
-    const service = new GatheringsService(prisma);
+    const service = buildService(prisma);
 
     const result = await service.updatePurchasePlan(
       "gathering",
@@ -407,11 +440,15 @@ describe("GatheringsService purchase plan", () => {
       ),
     } as unknown as PrismaService;
 
-    const result = await new GatheringsService(
-      prisma,
-    ).updatePurchaseResponsibility("gathering", "guest", "token", "meat", {
-      action: "claim",
-    });
+    const result = await buildService(prisma).updatePurchaseResponsibility(
+      "gathering",
+      "guest",
+      "token",
+      "meat",
+      {
+        action: "claim",
+      },
+    );
 
     expect(purchaseItem.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -460,7 +497,7 @@ describe("GatheringsService purchase plan", () => {
     } as unknown as PrismaService;
 
     await expect(
-      new GatheringsService(prisma).updatePurchaseResponsibility(
+      buildService(prisma).updatePurchaseResponsibility(
         "gathering",
         "guest",
         "token",
@@ -496,7 +533,7 @@ describe("GatheringsService purchase plan", () => {
       },
       $transaction: jest.fn((callback) => callback(transaction)),
     } as unknown as PrismaService;
-    const service = new GatheringsService(prisma);
+    const service = buildService(prisma);
     jest.spyOn(service, "getPurchasePlan").mockResolvedValue({} as never);
 
     await service.upsertPurchaseContribution(
@@ -569,7 +606,7 @@ describe("GatheringsService purchase plan", () => {
       },
       $transaction: jest.fn((callback) => callback(transaction)),
     } as unknown as PrismaService;
-    const service = new GatheringsService(prisma);
+    const service = buildService(prisma);
     jest.spyOn(service, "getPurchasePlan").mockResolvedValue({} as never);
 
     await service.upsertPurchaseContribution(
@@ -613,7 +650,7 @@ describe("GatheringsService purchase plan", () => {
     } as unknown as PrismaService;
 
     await expect(
-      new GatheringsService(prisma).upsertPurchaseContribution(
+      buildService(prisma).upsertPurchaseContribution(
         "gathering",
         "guest",
         "token",
@@ -651,7 +688,7 @@ describe("GatheringsService authenticated history", () => {
       $transaction: jest.fn((callback) => callback(transaction)),
     } as unknown as PrismaService;
 
-    const result = await new GatheringsService(prisma).create(input, {
+    const result = await buildService(prisma).create(input, {
       id: "auth-user",
       email: "tomy@example.com",
     });
@@ -701,7 +738,7 @@ describe("GatheringsService authenticated history", () => {
       $transaction: jest.fn((callback) => callback(transaction)),
     } as unknown as PrismaService;
 
-    await new GatheringsService(prisma).create(
+    await buildService(prisma).create(
       { ...input, templateGatheringId: "old" },
       { id: "auth-user", email: "tomy@example.com" },
     );
@@ -752,7 +789,7 @@ describe("GatheringsService payment aliases", () => {
       $transaction: jest.fn((callback) => callback(transaction)),
     } as unknown as PrismaService;
 
-    const result = await new GatheringsService(prisma).updatePaymentAlias(
+    const result = await buildService(prisma).updatePaymentAlias(
       "gathering",
       "participant",
       "token",
@@ -819,7 +856,7 @@ describe("GatheringsService payment aliases", () => {
       },
     } as unknown as PrismaService;
 
-    const result = await new GatheringsService(prisma).getPaymentDetails(
+    const result = await buildService(prisma).getPaymentDetails(
       "gathering",
       "payer",
       "token",
@@ -865,6 +902,8 @@ describe("GatheringsService lifecycle", () => {
           responseToken: "secret",
           gathering,
         }),
+        // Confirmar la fecha también resetea el RSVP del grupo.
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
       gathering: {
         update: jest.fn().mockResolvedValue({}),
@@ -874,12 +913,14 @@ describe("GatheringsService lifecycle", () => {
           finalizedStart: new Date("2026-08-21T00:00:00.000Z"),
           finalizedEnd: new Date("2026-08-21T03:00:00.000Z"),
           participants: [],
-          proposals: [],
         }),
       },
+      $transaction: jest.fn((callback: (tx: unknown) => Promise<unknown>) =>
+        callback(prisma),
+      ),
     } as unknown as PrismaService;
 
-    const result = await new GatheringsService(prisma).finalizeGathering(
+    const result = await buildService(prisma).finalizeGathering(
       "gathering",
       "organizer",
       "secret",
@@ -903,8 +944,10 @@ describe("GatheringsService lifecycle", () => {
   it("borra disponibilidades cuando cambia el rango", async () => {
     const transaction = {
       availability: { deleteMany: jest.fn().mockResolvedValue({ count: 2 }) },
-      proposal: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
       gathering: { update: jest.fn().mockResolvedValue({}) },
+      // Cambiar el rango reabre la búsqueda de fecha, y sin fecha el RSVP
+      // deja de aplicar para todos.
+      participant: { updateMany: jest.fn().mockResolvedValue({ count: 3 }) },
     };
     const prisma = {
       participant: {
@@ -925,7 +968,7 @@ describe("GatheringsService lifecycle", () => {
       $transaction: jest.fn((callback) => callback(transaction)),
     } as unknown as PrismaService;
 
-    await new GatheringsService(prisma).updateGathering(
+    await buildService(prisma).updateGathering(
       "gathering",
       "organizer",
       "secret",
@@ -988,7 +1031,7 @@ describe("GatheringsService expense corrections", () => {
       $transaction: jest.fn((callback) => callback(transaction)),
     } as unknown as PrismaService;
 
-    const result = await new GatheringsService(prisma).updateExpense(
+    const result = await buildService(prisma).updateExpense(
       "gathering",
       "participant",
       "secret",
@@ -1051,12 +1094,10 @@ describe("GatheringsService transfer confirmations", () => {
       transferConfirmation: { upsert },
     } as unknown as PrismaService;
 
-    await new GatheringsService(prisma).confirmTransfer(
-      "gathering",
-      "a",
-      "token-ana",
-      { toParticipantId: "b", amountCents: 6_000 },
-    );
+    await buildService(prisma).confirmTransfer("gathering", "a", "token-ana", {
+      toParticipantId: "b",
+      amountCents: 6_000,
+    });
 
     // La clave incluye la ronda: un segundo pago del mismo monto entre las
     // mismas dos personas ya no pisa al de la ronda anterior.
@@ -1089,7 +1130,7 @@ describe("GatheringsService addParticipant", () => {
     } as unknown as PrismaService;
 
     await expect(
-      new GatheringsService(prisma).addParticipant("gathering", {
+      buildService(prisma).addParticipant("gathering", {
         name: "Sofi",
       }),
     ).rejects.toThrow(/Ya hay alguien anotado/);
@@ -1107,7 +1148,7 @@ describe("GatheringsService addParticipant", () => {
       },
     } as unknown as PrismaService;
 
-    await new GatheringsService(prisma).addParticipant("gathering", {
+    await buildService(prisma).addParticipant("gathering", {
       name: "  sofi  ",
     });
 
@@ -1131,7 +1172,7 @@ describe("GatheringsService addParticipant", () => {
       },
     } as unknown as PrismaService;
 
-    await new GatheringsService(prisma).addParticipant("gathering", {
+    await buildService(prisma).addParticipant("gathering", {
       name: "Sofi",
       allowDuplicateName: true,
     });
@@ -1151,7 +1192,7 @@ describe("GatheringsService addParticipant", () => {
     } as unknown as PrismaService;
 
     await expect(
-      new GatheringsService(prisma).addParticipant("gathering", {
+      buildService(prisma).addParticipant("gathering", {
         name: "Alguien más",
       }),
     ).rejects.toThrow(/llegó al máximo/);
