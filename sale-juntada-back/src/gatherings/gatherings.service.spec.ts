@@ -1241,3 +1241,52 @@ describe("contacto de una participación autenticada", () => {
     },
   );
 });
+
+describe("vincular accesos antiguos a una cuenta", () => {
+  function fixture(owner: string | null) {
+    const participant = {
+      id: "legacy",
+      gatheringId: "g",
+      responseToken: "legacy-token",
+      authUserId: owner,
+      contact: "+5493811234567",
+      paymentAlias: null,
+    };
+    const prisma = {
+      participant: {
+        findFirst: jest.fn().mockResolvedValue(participant),
+        findUnique: jest.fn().mockResolvedValue(null),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findUniqueOrThrow: jest
+          .fn()
+          .mockResolvedValue({ ...participant, authUserId: "me" }),
+      },
+      userPaymentProfile: { findUnique: jest.fn().mockResolvedValue(null) },
+    } as unknown as PrismaService;
+    return { prisma, service: buildService(prisma) };
+  }
+  it("conserva la participación y el contacto al vincular una credencial antigua", async () => {
+    const { service, prisma } = fixture(null);
+    const result = await service.linkAuthenticatedParticipant(
+      "g",
+      "legacy",
+      "legacy-token",
+      { id: "me", email: "me@example.com" },
+    );
+    expect(result.id).toBe("legacy");
+    expect(result.contact).toBe("+5493811234567");
+    expect(prisma.participant.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "legacy", authUserId: null } }),
+    );
+  });
+  it("no cambia la cuenta de una participación ya vinculada", async () => {
+    const { service, prisma } = fixture("someone-else");
+    await expect(
+      service.linkAuthenticatedParticipant("g", "legacy", "legacy-token", {
+        id: "me",
+        email: "me@example.com",
+      }),
+    ).rejects.toThrow(/otra cuenta/);
+    expect(prisma.participant.updateMany).not.toHaveBeenCalled();
+  });
+});

@@ -29,15 +29,15 @@ describe("SupabaseAuthService", () => {
     const config = { get: jest.fn() } as unknown as ConfigService;
     const service = new SupabaseAuthService(config);
 
-    await expect(service.requireIdentity("Bearer token")).rejects.toBeInstanceOf(
-      ServiceUnavailableException,
-    );
+    await expect(
+      service.requireIdentity("Bearer token"),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
 
   it("exige un Bearer token", async () => {
-    await expect(configuredService().requireIdentity(undefined)).rejects.toBeInstanceOf(
-      UnauthorizedException,
-    );
+    await expect(
+      configuredService().requireIdentity(undefined),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
   it("rechaza tokens que Supabase no puede verificar", async () => {
@@ -52,6 +52,16 @@ describe("SupabaseAuthService", () => {
     ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
+  it("rechaza identidades anónimas de Supabase", async () => {
+    getClaims.mockResolvedValue({
+      data: { claims: { sub: "anonymous", is_anonymous: true } },
+      error: null,
+    });
+    await expect(
+      configuredService().requireIdentity("Bearer anonymous-token"),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
   it("devuelve sólo la identidad verificada del subject", async () => {
     const service = configuredService();
     getClaims.mockResolvedValue({
@@ -59,7 +69,9 @@ describe("SupabaseAuthService", () => {
       error: null,
     });
 
-    await expect(service.requireIdentity("Bearer valid-token")).resolves.toEqual({
+    await expect(
+      service.requireIdentity("Bearer valid-token"),
+    ).resolves.toEqual({
       id: "auth-user-id",
       email: "tomy@example.com",
     });

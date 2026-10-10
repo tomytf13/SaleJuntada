@@ -1,9 +1,11 @@
+import { realAccount, realAccountsConfigured } from "../helpers/account";
 import { expect, test, type Page } from "@playwright/test";
 const api = process.env.E2E_API_URL ?? "http://127.0.0.1:3001/api";
 
 test("navegación modular, borradores, enlaces directos y sesión persistente", async ({ page, request }) => {
-  test.skip(process.env.E2E_REAL_DB !== "1", "Requiere API y PostgreSQL local.");
-  const response = await request.post(`${api}/gatherings`, { data: {
+  test.skip(process.env.E2E_REAL_DB !== "1" || !realAccountsConfigured, "Requiere API y PostgreSQL local.");
+  await realAccount(page);
+  const response = await request.post(`${api}/gatherings`, { headers: { Authorization: `Bearer ${process.env.E2E_AUTH_TOKEN}` }, data: {
     title: "Asado modular", organizerName: "Tomy", startsAt: "2026-10-04T00:00:00.000Z", timeZone: "America/Argentina/Tucuman", locationHint: "Casa de Tomy",
   }});
   expect(response.ok()).toBeTruthy();

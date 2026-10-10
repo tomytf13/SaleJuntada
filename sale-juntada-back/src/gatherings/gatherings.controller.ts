@@ -1,3 +1,4 @@
+import { GatheringAccountGuard } from "./gathering-account.guard";
 import { GatheringServiceKey } from "@prisma/client";
 import { SetGatheringServiceDto } from "./dto/set-gathering-service.dto";
 import {
@@ -45,6 +46,7 @@ import { GatheringsService } from "./gatherings.service";
 import { RsvpService } from "../rsvp/rsvp.service";
 
 @ApiTags("gatherings")
+@UseGuards(GatheringAccountGuard)
 @Controller("gatherings")
 export class GatheringsController {
   constructor(
@@ -64,7 +66,7 @@ export class GatheringsController {
     @Headers("authorization") authorization: string | undefined,
     @Body() dto: CreateGatheringDto,
   ) {
-    const identity = await this.authService.optionalIdentity(authorization);
+    const identity = await this.authService.requireIdentity(authorization);
     return this.gatheringsService.create(dto, identity);
   }
 
@@ -102,9 +104,12 @@ export class GatheringsController {
   async addParticipant(
     @Param("gatheringId") gatheringId: string,
     @Body() dto: AddParticipantDto,
+    @Headers("authorization") authorization: string | undefined,
   ) {
-    const participant = await this.gatheringsService.addParticipant(
+    const identity = await this.authService.requireIdentity(authorization);
+    const participant = await this.gatheringsService.addAuthenticatedParticipant(
       gatheringId,
+      identity,
       dto,
     );
     this.gatheringsGateway.participantsChanged(gatheringId);
@@ -361,7 +366,7 @@ export class GatheringsController {
     @Headers("x-participant-token") participantToken: string | undefined,
     @Body() dto: UpdatePaymentAliasDto,
   ) {
-    const identity = await this.authService.optionalIdentity(authorization);
+    const identity = await this.authService.requireIdentity(authorization);
     const result = await this.gatheringsService.updatePaymentAlias(
       gatheringId,
       participantId,
