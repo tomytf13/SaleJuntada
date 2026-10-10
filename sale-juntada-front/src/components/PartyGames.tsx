@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useGatheringDraft } from "../hooks/useGatheringDraft";
 import { AnimatePresence, m } from "framer-motion";
 import { Dices, RefreshCw, ShieldCheck, Sparkles } from "lucide-react";
 import {
@@ -73,9 +73,9 @@ function nextPrompt(mode: GameMode, current: string | null) {
 }
 
 export function PartyGames() {
-  const [mode, setMode] = useState<GameMode>("icebreaker");
-  const [prompt, setPrompt] = useState<string | null>(null);
-  const [adultConfirmed, setAdultConfirmed] = useState(false);
+  const [mode, setMode] = useGatheringDraft<GameMode>("game-mode", "icebreaker");
+  const [prompt, setPrompt] = useGatheringDraft<string | null>("game-prompt", null);
+  const [adultConfirmed, setAdultConfirmed] = useGatheringDraft("game-adult", false);
   const selectedMode =
     gameModes.find((candidate) => candidate.id === mode) ?? gameModes[0];
 

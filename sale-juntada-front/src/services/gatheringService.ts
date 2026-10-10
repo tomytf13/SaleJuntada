@@ -40,8 +40,7 @@ export type FlexibleDateGatheringInput = CreateGatheringBase & {
 };
 
 export type CreateGatheringInput =
-  | FixedDateGatheringInput
-  | FlexibleDateGatheringInput;
+  FixedDateGatheringInput | FlexibleDateGatheringInput;
 
 /**
  * Horario candidato. Lo calcula el backend en la zona horaria de la juntada,
@@ -64,6 +63,8 @@ export type GatheringSlot = {
  * leyeron en ninguna parte del producto.
  */
 export type GatheringStatus = "OPEN" | "CONFIRMED" | "CANCELLED";
+export type GatheringServiceKey =
+  "compra" | "pendientes" | "alimentacion" | "cuentas" | "juegos";
 
 /** Respuesta a la invitación. Sólo aplica con fecha confirmada. */
 export type RsvpStatus = "GOING" | "MAYBE" | "NOT_GOING";
@@ -102,6 +103,8 @@ export type Gathering = {
   participantCount?: number;
   /** Sólo en la vista de participante. */
   rsvpSummary?: RsvpSummary;
+  /** Configuración privada. Ausente en la invitación pública. */
+  disabledServices?: GatheringServiceKey[];
   locationHint?: string | null;
   locationLatitude?: number | null;
   locationLongitude?: number | null;
@@ -139,6 +142,18 @@ export type Participant = {
   expensesReadyAt?: string | null;
   availabilities?: Availability[];
 };
+
+export type ChecklistItem = {
+  id: string;
+  gatheringId: string;
+  label: string;
+  assignedParticipantId: string | null;
+  assignee: Pick<Participant, "id" | "name" | "avatarUrl"> | null;
+  isReady: boolean;
+};
+
+export type ChecklistAction =
+  "claim" | "release" | "ready" | "pending" | "assign";
 
 export type Availability = {
   id: string;
@@ -397,6 +412,22 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 let purchaseCatalogRequest: Promise<PurchaseCatalog> | null = null;
 
 export const gatheringService = {
+  setGatheringService(
+    gatheringId: string,
+    participantId: string,
+    token: string,
+    service: GatheringServiceKey,
+    enabled: boolean,
+  ) {
+    return request<{ disabledServices: GatheringServiceKey[] }>(
+      `/gatherings/${gatheringId}/participants/${participantId}/services/${service}`,
+      {
+        method: "PUT",
+        headers: { "x-participant-token": token },
+        body: JSON.stringify({ enabled }),
+      },
+    );
+  },
   searchLocations(query: string) {
     return request<LocationSearchResult[]>(
       `/locations/search?q=${encodeURIComponent(query)}`,
@@ -437,6 +468,61 @@ export const gatheringService = {
         ? { "x-participant-token": participantToken }
         : undefined,
     });
+  },
+
+  getChecklist(gatheringId: string, token: string) {
+    return request<ChecklistItem[]>(`/gatherings/${gatheringId}/checklist`, {
+      headers: { "x-participant-token": token },
+    });
+  },
+
+  addChecklistItem(
+    gatheringId: string,
+    participantId: string,
+    token: string,
+    label: string,
+  ) {
+    return request<ChecklistItem>(
+      `/gatherings/${gatheringId}/participants/${participantId}/checklist`,
+      {
+        method: "POST",
+        headers: { "x-participant-token": token },
+        body: JSON.stringify({ label }),
+      },
+    );
+  },
+
+  updateChecklistItem(
+    gatheringId: string,
+    participantId: string,
+    token: string,
+    itemId: string,
+    action: ChecklistAction,
+    assignedParticipantId?: string,
+  ) {
+    return request<ChecklistItem>(
+      `/gatherings/${gatheringId}/participants/${participantId}/checklist/${itemId}`,
+      {
+        method: "PATCH",
+        headers: { "x-participant-token": token },
+        body: JSON.stringify({ action, assignedParticipantId }),
+      },
+    );
+  },
+
+  removeChecklistItem(
+    gatheringId: string,
+    participantId: string,
+    token: string,
+    itemId: string,
+  ) {
+    return request<{ deleted: boolean }>(
+      `/gatherings/${gatheringId}/participants/${participantId}/checklist/${itemId}`,
+      {
+        method: "DELETE",
+        headers: { "x-participant-token": token },
+      },
+    );
   },
 
   addParticipant(

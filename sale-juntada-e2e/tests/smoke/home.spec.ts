@@ -74,15 +74,97 @@ test("abre una juntada sembrada desde PostgreSQL real", async ({ page, request }
 });
 
 test("permite elegir disponibilidad y buscar coincidencias", async ({ page }) => {
-  await page.goto("/");
+  // P1.3: la disponibilidad ya no tiene una demo interactiva en "/" — vive
+  // sólo dentro de una juntada real que todavía está buscando fecha
+  // (status OPEN). Este test cubre lo mismo que antes, ahora en /j/:slug.
+  const gathering = {
+    id: "gathering-availability",
+    slug: "previa-sin-fecha-m1n2o3",
+    title: "Previa sin fecha",
+    organizerName: "Tomás",
+    locationHint: "Centro",
+    ...gatheringSchedule,
+    status: "OPEN",
+    participants: [
+      {
+        id: "organizer-availability",
+        name: "Tomás",
+        isOrganizer: true,
+        availabilities: [],
+      },
+    ],
+    isParticipant: true,
+  };
+  const match = {
+    startsAt: gatheringSchedule.slots[0].startsAt,
+    endsAt: gatheringSchedule.slots[0].endsAt,
+    available: 1,
+    maybe: 0,
+    total: 1,
+    missing: 0,
+    score: 1,
+    explanation: "Pueden todos",
+    availableParticipantNames: ["Sofi"],
+    maybeParticipantNames: [],
+    missingParticipantNames: [],
+    pendingParticipantNames: [],
+    conflictParticipantNames: [],
+  };
 
-  await expect(
-    page.getByRole("heading", {
-      name: /Hagamos que el plan salga|Que coincidir sea la parte fácil/i,
-    }),
-  ).toBeVisible();
+  await page.route("**/api/gatherings**", async (route) => {
+    const request = route.request();
+    if (request.method() === "GET" && request.url().endsWith("/payment-details")) {
+      await route.fulfill({ status: 200, json: { paymentAlias: null, recipients: [] } });
+      return;
+    }
+    if (request.method() === "GET" && request.url().endsWith("/checklist")) {
+      await route.fulfill({ status: 200, json: [] });
+      return;
+    }
+    if (request.method() === "GET") {
+      if (request.url().includes("/matches")) {
+        await route.fulfill({ status: 200, json: [match] });
+        return;
+      }
+      if (request.url().includes("/expenses/settlement")) {
+        await route.fulfill({ status: 200, json: emptySettlement });
+        return;
+      }
+      await route.fulfill({ status: 200, json: gathering });
+      return;
+    }
+    if (request.method() === "POST") {
+      gathering.participants.push({ id: "participant-availability", name: "Sofi", isOrganizer: false, availabilities: [] });
+      await route.fulfill({
+        status: 201,
+        json: {
+          id: "participant-availability",
+          name: "Sofi",
+          isOrganizer: false,
+          responseToken: "sofi-availability-secret",
+          availabilities: [],
+        },
+      });
+      return;
+    }
+    if (request.method() === "PUT") {
+      await route.fulfill({ status: 200, json: { id: "participant-availability", name: "Sofi", isOrganizer: false, availabilities: [] } });
+      return;
+    }
+    await route.abort();
+  });
 
-  await page.getByRole("button", { name: /Dom 26 Jul · 13:00/i }).click();
+  await page.goto("/j/previa-sin-fecha-m1n2o3");
+  await page.getByRole("button", { name: /sumarme/i }).click();
+  await page.getByLabel("Tu nombre").fill("Sofi");
+  await page.getByRole("button", { name: /Entrar y marcar horarios/i }).click();
+  await expect(page.getByText("Sofi (vos)")).toBeVisible();
+
+  await page
+    .getByRole("group", { name: /Elegí tus horarios disponibles/i })
+    .getByRole("button")
+    .first()
+    .click();
   await page.getByRole("button", { name: /Encontrar el mejor momento/i }).click();
 
   await expect(
@@ -98,6 +180,7 @@ test("crea una juntada y abre su enlace compartible", async ({ page }) => {
     organizerName: "Tomás",
     locationHint: "Yerba Buena",
     ...gatheringSchedule,
+    status: "OPEN",
     participants: [
       {
         id: "participant-1",
@@ -112,6 +195,14 @@ test("crea una juntada y abre su enlace compartible", async ({ page }) => {
 
   await page.route("**/api/gatherings**", async (route) => {
     const request = route.request();
+    if (request.method() === "GET" && request.url().endsWith("/payment-details")) {
+      await route.fulfill({ status: 200, json: { paymentAlias: null, recipients: [] } });
+      return;
+    }
+    if (request.method() === "GET" && request.url().endsWith("/checklist")) {
+      await route.fulfill({ status: 200, json: [] });
+      return;
+    }
     if (request.method() === "POST") {
       await route.fulfill({ status: 201, json: gathering });
       return;
@@ -134,11 +225,10 @@ test("crea una juntada y abre su enlace compartible", async ({ page }) => {
   await page.getByLabel(/Dirección o lugar/i).fill("Yerba Buena");
   await page.getByRole("button", { name: /Crear y elegir horarios/i }).click();
 
-  await expect(page).toHaveURL(/\/j\/asado-del-viernes-a1b2c3$/);
+  await expect(page).toHaveURL(/\/j\/asado-del-viernes-a1b2c3\/fecha$/);
   await expect(
     page.getByRole("heading", { name: "Asado del viernes" }).first(),
   ).toBeVisible();
-  await expect(page.getByText(/Juntada creada/i)).toBeVisible();
 });
 
 test("un invitado entra sin registro y guarda su disponibilidad", async ({
@@ -151,6 +241,7 @@ test("un invitado entra sin registro y guarda su disponibilidad", async ({
     organizerName: "Tomás",
     locationHint: "Centro",
     ...gatheringSchedule,
+    status: "OPEN",
     participants: [
       {
         id: "organizer-2",
@@ -166,6 +257,14 @@ test("un invitado entra sin registro y guarda su disponibilidad", async ({
 
   await page.route("**/api/gatherings**", async (route) => {
     const request = route.request();
+    if (request.method() === "GET" && request.url().endsWith("/payment-details")) {
+      await route.fulfill({ status: 200, json: { paymentAlias: null, recipients: [] } });
+      return;
+    }
+    if (request.method() === "GET" && request.url().endsWith("/checklist")) {
+      await route.fulfill({ status: 200, json: [] });
+      return;
+    }
     if (request.method() === "GET") {
       if (request.url().includes("/matches")) {
         await route.fulfill({ status: 200, json: [] });
@@ -179,6 +278,7 @@ test("un invitado entra sin registro y guarda su disponibilidad", async ({
       return;
     }
     if (request.method() === "POST") {
+      gathering.participants.push({ id: "participant-2", name: "Sofi", isOrganizer: false, availabilities: [] });
       await route.fulfill({
         status: 201,
         json: {
@@ -209,6 +309,7 @@ test("un invitado entra sin registro y guarda su disponibilidad", async ({
   });
 
   await page.goto("/j/birras-en-el-centro-d4e5f6");
+  await page.getByRole("button", { name: /sumarme/i }).click();
   await page.getByLabel("Tu nombre").fill("Sofi");
   await page.getByRole("button", { name: /Entrar y marcar horarios/i }).click();
   await expect(page.getByText("Sofi (vos)")).toBeVisible();
@@ -231,6 +332,7 @@ test("carga un gasto y calcula quién transfiere a quién", async ({ page }) => 
     organizerName: "Tomás",
     locationHint: "Centro",
     ...gatheringSchedule,
+    status: "OPEN",
     participants: [
       {
         id: "organizer-3",
@@ -246,6 +348,14 @@ test("carga un gasto y calcula quién transfiere a quién", async ({ page }) => 
 
   await page.route("**/api/gatherings**", async (route) => {
     const request = route.request();
+    if (request.method() === "GET" && request.url().endsWith("/payment-details")) {
+      await route.fulfill({ status: 200, json: { paymentAlias: null, recipients: [] } });
+      return;
+    }
+    if (request.method() === "GET" && request.url().endsWith("/checklist")) {
+      await route.fulfill({ status: 200, json: [] });
+      return;
+    }
     if (request.method() === "GET") {
       if (request.url().includes("/matches")) {
         await route.fulfill({ status: 200, json: [] });
@@ -329,6 +439,7 @@ test("carga un gasto y calcula quién transfiere a quién", async ({ page }) => 
       return;
     }
     if (request.method() === "POST") {
+      gathering.participants.push({ id: "participant-3", name: "Sofi", isOrganizer: false, availabilities: [] });
       await route.fulfill({
         status: 201,
         json: {
@@ -345,6 +456,7 @@ test("carga un gasto y calcula quién transfiere a quién", async ({ page }) => 
   });
 
   await page.goto("/j/pizza-del-sabado-g7h8i9");
+  await page.getByRole("button", { name: /sumarme/i }).click();
   await page.getByLabel("Tu nombre").fill("Sofi");
   await page.getByRole("button", { name: /Entrar y marcar horarios/i }).click();
   await expect(page.getByText("Sofi (vos)")).toBeVisible();
@@ -352,6 +464,8 @@ test("carga un gasto y calcula quién transfiere a quién", async ({ page }) => 
     page.getByRole("dialog", { name: /Sumarse a Pizza del sábado/i }),
   ).toBeHidden();
 
+  await page.locator(`a:visible[href="/j/${gathering.slug}/servicios"]`).first().click();
+  await page.locator(`a:visible[href="/j/${gathering.slug}/cuentas"]`).first().click();
   await page.getByLabel("Concepto").fill("Pizzas");
   await page.getByLabel("Monto").fill("12000");
   await expect(page.getByLabel("Monto")).toHaveValue("12.000");
@@ -359,6 +473,7 @@ test("carga un gasto y calcula quién transfiere a quién", async ({ page }) => 
   await page.getByRole("button", { name: /Agregar y recalcular/i }).click();
 
   await expect.poll(() => expenseToken).toBe("sofi-expense-secret");
+  await page.getByRole("link", { name: "Transferencias", exact: true }).click();
   const transfer = page.locator(".transfer-row");
   await expect(transfer.getByText("Tomás")).toBeVisible();
   await expect(transfer.getByText(/le transfiere a Sofi/i)).toBeVisible();
@@ -466,6 +581,14 @@ test("el grupo elige responsables y el organizador edita la compra", async ({
   });
   await page.route("**/api/gatherings**", async (route) => {
     const request = route.request();
+    if (request.method() === "GET" && request.url().endsWith("/payment-details")) {
+      await route.fulfill({ status: 200, json: { paymentAlias: null, recipients: [] } });
+      return;
+    }
+    if (request.method() === "GET" && request.url().endsWith("/checklist")) {
+      await route.fulfill({ status: 200, json: [] });
+      return;
+    }
     if (request.url().endsWith("/catalog/purchase")) {
       await route.fulfill({ status: 200, json: { version: 1, products: [] } });
       return;
@@ -561,12 +684,14 @@ test("el grupo elige responsables y el organizador edita la compra", async ({
     await route.fulfill({ status: 200, json: gathering });
   });
 
-  await page.goto("/j/compra-compartida-j1k2l3");
+  await page.goto("/j/compra-compartida-j1k2l3/fecha");
   await expect(page.getByText("Tomás (vos)")).toBeVisible();
   await page.getByRole("button", { name: /Encontrar el mejor momento/i }).click();
   await page.getByRole("button", { name: /Confirmar esta fecha/i }).click();
   await expect.poll(() => finalizationToken).toBe("organizer-purchase-token");
   await expect.poll(() => finalizedStart).toBe(match.startsAt);
+  await page.locator(`a:visible[href="/j/${gathering.slug}/servicios"]`).first().click();
+  await page.locator(`a:visible[href="/j/${gathering.slug}/compra"]`).first().click();
   await expect(page.getByRole("heading", { name: /Armemos la compra/i })).toBeVisible();
   await expect(
     page.getByRole("heading", { name: /Elegí qué vas a llevar/i }),

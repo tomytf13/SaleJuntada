@@ -62,10 +62,23 @@ export class GatheringsGateway implements OnGatewayDisconnect {
   @SubscribeMessage("gathering:join")
   async join(client: Socket, payload: WatchPayload) {
     const member = await this.authorize(payload);
-    if (!member) return;
+    if (!member) return { joined: false };
     this.members.set(client.id, member);
     await client.join(this.room(member.gatheringId));
     this.broadcastPresence(member.gatheringId);
+    return { joined: true };
+  }
+
+  participantsChanged(gatheringId: string) {
+    this.server.to(this.room(gatheringId)).emit("participants:changed");
+  }
+
+  availabilityChanged(gatheringId: string) {
+    this.server.to(this.room(gatheringId)).emit("availability:changed");
+  }
+
+  checklistChanged(gatheringId: string) {
+    this.server.to(this.room(gatheringId)).emit("checklist:changed");
   }
 
   private async authorize(payload: WatchPayload): Promise<LiveMember | null> {
@@ -167,7 +180,7 @@ export class GatheringsGateway implements OnGatewayDisconnect {
 
   gatheringChanged(
     gatheringId: string,
-    action: "confirmed" | "updated" | "cancelled",
+    action: "confirmed" | "updated" | "cancelled" | "services",
   ) {
     this.server.to(this.room(gatheringId)).emit("gathering:changed", {
       action,

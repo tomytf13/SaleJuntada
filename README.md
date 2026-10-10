@@ -9,6 +9,9 @@ Sale Juntada ayuda a coordinar una reunión con amigos, familia o equipo de trab
 - Crea una juntada con nombre, fechas, horario y duración
 - Invita participantes sin exigir registro obligatorio
 - Recibe disponibilidad individual y calcula la mejor coincidencia
+- Permite confirmar asistencia y acompañantes, con respuestas del grupo en vivo
+- Lleva una lista de necesidades pendientes y permite anotarse o asignar responsables
+- Organiza invitados, compra, pendientes, alimentación, cuentas y juegos en pantallas propias
 - Muestra los horarios más probables según el grupo
 - Soporta cierre de la propuesta, confirmación y enlace para compartir
 - Sugiere la compra y permite que cada participante elija en vivo qué va a llevar
@@ -28,6 +31,7 @@ Sale Juntada ayuda a coordinar una reunión con amigos, familia o equipo de trab
 - [sale-juntada-back](sale-juntada-back): API, dominio y lógica de coincidencias
 - [sale-juntada-e2e](sale-juntada-e2e): pruebas end-to-end del flujo crítico
 - [docs/google-calendar.md](docs/google-calendar.md): especificación de la integración con Google Calendar
+- [docs/MODULAR_GATHERING_IMPLEMENTATION.md](docs/MODULAR_GATHERING_IMPLEMENTATION.md): navegación modular, gestión de servicios por juntada, migración y validación
 
 ## 🚀 Arranque local
 

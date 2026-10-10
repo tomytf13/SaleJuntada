@@ -1,3 +1,4 @@
+import { useGatheringDraft } from "../hooks/useGatheringDraft";
 import { useState, type FormEvent } from "react";
 
 const aliasPattern = /^[A-Za-z0-9.-]{6,20}$/;
@@ -13,7 +14,7 @@ export function PaymentAliasEditor({
   isSaving: boolean;
   onSave(paymentAlias: string): Promise<void>;
 }) {
-  const [value, setValue] = useState(paymentAlias ?? "");
+  const [value, setValue] = useGatheringDraft(`payment-alias:${paymentAlias ?? ""}`, paymentAlias ?? "");
   const [error, setError] = useState("");
 
   const submit = (event: FormEvent<HTMLFormElement>) => {

@@ -23,6 +23,14 @@ enum RsvpStatus {
   NOT_GOING
 }
 
+enum GatheringServiceKey {
+  compra
+  pendientes
+  alimentacion
+  cuentas
+  juegos
+}
+
 enum AvailabilityKind {
   AVAILABLE
   MAYBE
@@ -57,10 +65,13 @@ model Gathering {
   finalizedEnd          DateTime?
   finalizedLocation     String?
   expenseRound          Int                    @default(1)
+  disabledServices      GatheringServiceKey[]  @default([])
+  archivedExpenseSettlement Json?
   participants          Participant[]
   expenses              Expense[]
   transferConfirmations TransferConfirmation[]
   purchasePlan          PurchasePlan?
+  checklistItems        ChecklistItem[]
   createdAt             DateTime               @default(now())
   updatedAt             DateTime               @updatedAt
 
@@ -102,6 +113,7 @@ model Participant {
   purchasePlansUpdated  PurchasePlan[]         @relation("PurchasePlanUpdatedBy")
   purchaseItemsAssigned PurchaseItem[]         @relation("PurchaseItemAssignee")
   purchaseContributions PurchaseContribution[]
+  checklistItemsAssigned ChecklistItem[]
   createdAt             DateTime               @default(now())
   updatedAt             DateTime               @updatedAt
 
@@ -110,6 +122,21 @@ model Participant {
   @@index([authUserId])
   /// Sirve al agrupado por estado que arma el resumen de asistencia.
   @@index([gatheringId, rsvpStatus])
+}
+
+model ChecklistItem {
+  id                    String       @id @default(cuid())
+  gatheringId           String
+  gathering             Gathering    @relation(fields: [gatheringId], references: [id], onDelete: Cascade)
+  label                 String       @db.VarChar(120)
+  assignedParticipantId String?
+  assignee              Participant? @relation(fields: [assignedParticipantId], references: [id], onDelete: SetNull)
+  isReady               Boolean      @default(false)
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+
+  @@index([gatheringId, createdAt])
+  @@index([assignedParticipantId])
 }
 
 model UserPaymentProfile {

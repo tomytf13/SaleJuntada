@@ -1,3 +1,5 @@
+import { GatheringServiceKey } from "@prisma/client";
+import { SetGatheringServiceDto } from "./dto/set-gathering-service.dto";
 import {
   BadRequestException,
   Body,
@@ -7,6 +9,7 @@ import {
   Header,
   Headers,
   Param,
+  ParseEnumPipe,
   Patch,
   Post,
   Put,
@@ -23,6 +26,11 @@ import { ConfirmTransferDto } from "./dto/confirm-transfer.dto";
 import { CreateGatheringDto } from "./dto/create-gathering.dto";
 import { FinalizeGatheringDto } from "./dto/finalize-gathering.dto";
 import { SetAvailabilityDto } from "./dto/set-availability.dto";
+import { ChecklistService } from "./checklist.service";
+import {
+  CreateChecklistItemDto,
+  UpdateChecklistItemDto,
+} from "./dto/checklist.dto";
 import { SetRsvpDto } from "./dto/set-rsvp.dto";
 import { UpdateDietaryProfileDto } from "./dto/update-dietary-profile.dto";
 import { UpdateExpenseDto } from "./dto/update-expense.dto";
@@ -44,6 +52,7 @@ export class GatheringsController {
     private readonly gatheringsGateway: GatheringsGateway,
     private readonly authService: SupabaseAuthService,
     private readonly rsvpService: RsvpService,
+    private readonly checklistService: ChecklistService,
   ) {}
 
   // Crear una juntada escribe varias filas y genera un slug: es la operación
@@ -90,11 +99,16 @@ export class GatheringsController {
   // tope de participantes ya lo limita; esto además frena el ritmo.
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post(":gatheringId/participants")
-  addParticipant(
+  async addParticipant(
     @Param("gatheringId") gatheringId: string,
     @Body() dto: AddParticipantDto,
   ) {
-    return this.gatheringsService.addParticipant(gatheringId, dto);
+    const participant = await this.gatheringsService.addParticipant(
+      gatheringId,
+      dto,
+    );
+    this.gatheringsGateway.participantsChanged(gatheringId);
+    return participant;
   }
 
   @Post(":gatheringId/participants/auth")
@@ -104,11 +118,14 @@ export class GatheringsController {
     @Body() dto: AuthParticipantDto,
   ) {
     const identity = await this.authService.requireIdentity(authorization);
-    return this.gatheringsService.addAuthenticatedParticipant(
-      gatheringId,
-      identity,
-      dto,
-    );
+    const participant =
+      await this.gatheringsService.addAuthenticatedParticipant(
+        gatheringId,
+        identity,
+        dto,
+      );
+    this.gatheringsGateway.participantsChanged(gatheringId);
+    return participant;
   }
 
   @Post(":gatheringId/participants/:participantId/auth-link")
@@ -128,18 +145,20 @@ export class GatheringsController {
   }
 
   @Put(":gatheringId/participants/:participantId/availability")
-  setAvailability(
+  async setAvailability(
     @Param("gatheringId") gatheringId: string,
     @Param("participantId") participantId: string,
     @Headers("x-participant-token") participantToken: string | undefined,
     @Body() dto: SetAvailabilityDto,
   ) {
-    return this.gatheringsService.setAvailability(
+    const participant = await this.gatheringsService.setAvailability(
       gatheringId,
       participantId,
       participantToken,
       dto,
     );
+    this.gatheringsGateway.availabilityChanged(gatheringId);
+    return participant;
   }
 
   /**
@@ -167,6 +186,65 @@ export class GatheringsController {
       rsvpStatus: result.rsvpStatus,
       plusOnes: result.plusOnes,
     });
+    return result;
+  }
+
+  @UseGuards(ParticipantGuard)
+  @Get(":gatheringId/checklist")
+  listChecklist(@Param("gatheringId") gatheringId: string) {
+    return this.checklistService.list(gatheringId);
+  }
+
+  @Post(":gatheringId/participants/:participantId/checklist")
+  async createChecklistItem(
+    @Param("gatheringId") gatheringId: string,
+    @Param("participantId") participantId: string,
+    @Headers("x-participant-token") token: string | undefined,
+    @Body() dto: CreateChecklistItemDto,
+  ) {
+    const item = await this.checklistService.create(
+      gatheringId,
+      participantId,
+      token,
+      dto,
+    );
+    this.gatheringsGateway.checklistChanged(gatheringId);
+    return item;
+  }
+
+  @Patch(":gatheringId/participants/:participantId/checklist/:itemId")
+  async updateChecklistItem(
+    @Param("gatheringId") gatheringId: string,
+    @Param("participantId") participantId: string,
+    @Param("itemId") itemId: string,
+    @Headers("x-participant-token") token: string | undefined,
+    @Body() dto: UpdateChecklistItemDto,
+  ) {
+    const item = await this.checklistService.update(
+      gatheringId,
+      participantId,
+      token,
+      itemId,
+      dto,
+    );
+    this.gatheringsGateway.checklistChanged(gatheringId);
+    return item;
+  }
+
+  @Delete(":gatheringId/participants/:participantId/checklist/:itemId")
+  async removeChecklistItem(
+    @Param("gatheringId") gatheringId: string,
+    @Param("participantId") participantId: string,
+    @Param("itemId") itemId: string,
+    @Headers("x-participant-token") token: string | undefined,
+  ) {
+    const result = await this.checklistService.remove(
+      gatheringId,
+      participantId,
+      token,
+      itemId,
+    );
+    this.gatheringsGateway.checklistChanged(gatheringId);
     return result;
   }
 
@@ -208,6 +286,26 @@ export class GatheringsController {
     );
     this.gatheringsGateway.gatheringChanged(gatheringId, "updated");
     return gathering;
+  }
+
+  @Put(":gatheringId/participants/:participantId/services/:service")
+  async setService(
+    @Param("gatheringId") gatheringId: string,
+    @Param("participantId") participantId: string,
+    @Param("service", new ParseEnumPipe(GatheringServiceKey))
+    service: GatheringServiceKey,
+    @Headers("x-participant-token") token: string | undefined,
+    @Body() dto: SetGatheringServiceDto,
+  ) {
+    const result = await this.gatheringsService.setGatheringService(
+      gatheringId,
+      participantId,
+      token,
+      service,
+      dto.enabled,
+    );
+    this.gatheringsGateway.gatheringChanged(gatheringId, "services");
+    return result;
   }
 
   @Delete(":gatheringId/participants/:participantId/settings")
@@ -424,10 +522,7 @@ export class GatheringsController {
       expenseId,
       dto,
     );
-    this.gatheringsGateway.expensesChanged(
-      gatheringId,
-      result.participantName,
-    );
+    this.gatheringsGateway.expensesChanged(gatheringId, result.participantName);
     return result.expense;
   }
 
@@ -444,10 +539,7 @@ export class GatheringsController {
       participantToken,
       expenseId,
     );
-    this.gatheringsGateway.expensesChanged(
-      gatheringId,
-      result.participantName,
-    );
+    this.gatheringsGateway.expensesChanged(gatheringId, result.participantName);
     return { id: result.id };
   }
 
@@ -505,7 +597,9 @@ export class GatheringsController {
       );
     }
     if (key.length > 200) {
-      throw new BadRequestException("La cabecera Idempotency-Key es demasiado larga");
+      throw new BadRequestException(
+        "La cabecera Idempotency-Key es demasiado larga",
+      );
     }
     return key;
   }

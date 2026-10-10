@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { ParticipantAuthService } from "../participants/participant-auth.service";
 import { RsvpService } from "../rsvp/rsvp.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -10,7 +11,30 @@ import { GatheringsService, MAX_PARTICIPANTS } from "./gatherings.service";
  * aflojara la comparación de tokens, fallarían acá.
  */
 function buildService(prisma: PrismaService) {
-  return new GatheringsService(prisma, new ParticipantAuthService(prisma), new RsvpService(prisma, new ParticipantAuthService(prisma)));
+  // Los dobles de escritura participan del mismo límite transaccional que producción.
+  const addServiceLock = (tx: Prisma.TransactionClient) => {
+    tx.$queryRaw ??= jest
+      .fn()
+      .mockResolvedValue([{ status: "CONFIRMED", disabledServices: [] }]);
+    return tx;
+  };
+  const previousTransaction = (
+    prisma.$transaction as jest.Mock | undefined
+  )?.getMockImplementation();
+  prisma.$transaction = jest.fn(
+    (callback: (tx: Prisma.TransactionClient) => unknown) =>
+      previousTransaction
+        ? previousTransaction((tx: Prisma.TransactionClient) =>
+            callback(addServiceLock(tx)),
+          )
+        : callback(addServiceLock(prisma)),
+  ) as unknown as PrismaService["$transaction"];
+
+  return new GatheringsService(
+    prisma,
+    new ParticipantAuthService(prisma),
+    new RsvpService(prisma, new ParticipantAuthService(prisma)),
+  );
 }
 
 describe("GatheringsService expense settlement", () => {
@@ -253,12 +277,9 @@ describe("GatheringsService dietary profile", () => {
     } as unknown as PrismaService;
 
     await expect(
-      buildService(prisma).updateDietaryProfile(
-        "gathering",
-        "guest",
-        "token",
-        { dietaryPreferences: ["VEGAN"] },
-      ),
+      buildService(prisma).updateDietaryProfile("gathering", "guest", "token", {
+        dietaryPreferences: ["VEGAN"],
+      }),
     ).rejects.toThrow("Elegí si vas a gestionar tu comida");
   });
 });
@@ -419,9 +440,15 @@ describe("GatheringsService purchase plan", () => {
       ),
     } as unknown as PrismaService;
 
-    const result = await buildService(prisma).updatePurchaseResponsibility("gathering", "guest", "token", "meat", {
-      action: "claim",
-    });
+    const result = await buildService(prisma).updatePurchaseResponsibility(
+      "gathering",
+      "guest",
+      "token",
+      "meat",
+      {
+        action: "claim",
+      },
+    );
 
     expect(purchaseItem.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1067,12 +1094,10 @@ describe("GatheringsService transfer confirmations", () => {
       transferConfirmation: { upsert },
     } as unknown as PrismaService;
 
-    await buildService(prisma).confirmTransfer(
-      "gathering",
-      "a",
-      "token-ana",
-      { toParticipantId: "b", amountCents: 6_000 },
-    );
+    await buildService(prisma).confirmTransfer("gathering", "a", "token-ana", {
+      toParticipantId: "b",
+      amountCents: 6_000,
+    });
 
     // La clave incluye la ronda: un segundo pago del mismo monto entre las
     // mismas dos personas ya no pisa al de la ronda anterior.

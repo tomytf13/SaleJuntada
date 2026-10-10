@@ -27,6 +27,9 @@ function buildPrisma() {
   const state = { expenseRound: 1, nextId: 1 };
 
   const client = {
+    $queryRaw: jest
+      .fn()
+      .mockResolvedValue([{ status: "CONFIRMED", disabledServices: [] }]),
     participant: {
       findFirst: jest.fn().mockResolvedValue({
         id: "guest",
@@ -53,9 +56,15 @@ function buildPrisma() {
         ({
           where,
         }: {
-          where: { gatheringId_idempotencyKey: { gatheringId: string; idempotencyKey: string } };
+          where: {
+            gatheringId_idempotencyKey: {
+              gatheringId: string;
+              idempotencyKey: string;
+            };
+          };
         }) => {
-          const { gatheringId, idempotencyKey } = where.gatheringId_idempotencyKey;
+          const { gatheringId, idempotencyKey } =
+            where.gatheringId_idempotencyKey;
           return Promise.resolve(
             expenses.find(
               (expense) =>
@@ -73,10 +82,13 @@ function buildPrisma() {
         );
         if (duplicated) {
           return Promise.reject(
-            new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
-              code: "P2002",
-              clientVersion: "test",
-            }),
+            new Prisma.PrismaClientKnownRequestError(
+              "Unique constraint failed",
+              {
+                code: "P2002",
+                clientVersion: "test",
+              },
+            ),
           );
         }
         const created = {
@@ -148,7 +160,11 @@ function buildPrisma() {
 }
 
 function buildService(prisma: PrismaService) {
-  return new GatheringsService(prisma, new ParticipantAuthService(prisma), new RsvpService(prisma, new ParticipantAuthService(prisma)));
+  return new GatheringsService(
+    prisma,
+    new ParticipantAuthService(prisma),
+    new RsvpService(prisma, new ParticipantAuthService(prisma)),
+  );
 }
 
 const payload = { description: "Carne", amountCents: 42_000 };

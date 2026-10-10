@@ -1,4 +1,8 @@
 import {
+  lockGatheringServices,
+  withActiveGatheringService,
+} from "./gathering-service-access";
+import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
@@ -9,6 +13,7 @@ import {
 import {
   AvailabilityKind,
   GatheringStatus,
+  GatheringServiceKey,
   Prisma,
   PurchaseCategory,
   RsvpStatus,
@@ -421,6 +426,55 @@ export class GatheringsService {
     });
   }
 
+  async setGatheringService(
+    gatheringId: string,
+    participantId: string,
+    token: string | undefined,
+    service: GatheringServiceKey,
+    enabled: boolean,
+  ) {
+    await this.participantAuth.requireOrganizer(
+      gatheringId,
+      participantId,
+      token,
+    );
+    return this.prisma.$transaction(async (transaction) => {
+      const gathering = await lockGatheringServices(transaction, gatheringId);
+      const disabled = new Set(gathering.disabledServices);
+      if (disabled.has(service) === !enabled)
+        return { disabledServices: [...disabled] };
+      let archivedExpenseSettlement:
+        Prisma.InputJsonValue | typeof Prisma.DbNull | undefined;
+      if (service === "cuentas") {
+        if (enabled) archivedExpenseSettlement = Prisma.DbNull;
+        else {
+          const settlement = await this.calculateExpenseSettlement(
+            gatheringId,
+            transaction,
+          );
+          if (
+            settlement.transfers.length > 0 ||
+            (settlement.expenses.length > 0 && !settlement.allReady)
+          ) {
+            throw new ConflictException(
+              "Antes de desactivar Cuentas, todos deben terminar de cargar sus gastos y resolver las transferencias pendientes.",
+            );
+          }
+          archivedExpenseSettlement = JSON.parse(
+            JSON.stringify(settlement),
+          ) as Prisma.InputJsonValue;
+        }
+      }
+      if (enabled) disabled.delete(service);
+      else disabled.add(service);
+      return transaction.gathering.update({
+        where: { id: gatheringId },
+        data: { disabledServices: [...disabled], archivedExpenseSettlement },
+        select: { disabledServices: true },
+      });
+    });
+  }
+
   /**
    * Devuelve la juntada en una de dos representaciones según quién pregunta.
    *
@@ -515,6 +569,7 @@ export class GatheringsService {
       ...invitation,
       isParticipant: true as const,
       viewerParticipantId: viewer.id,
+      disabledServices: gathering.disabledServices,
       organizerName: gathering.organizerName,
       expenseRound: gathering.expenseRound,
       createdAt: gathering.createdAt,
@@ -554,7 +609,10 @@ export class GatheringsService {
         "La juntada tiene que terminar después de empezar",
       );
     }
-    if (window.dailyEndMinutes - window.dailyStartMinutes < window.durationMinutes) {
+    if (
+      window.dailyEndMinutes - window.dailyStartMinutes <
+      window.durationMinutes
+    ) {
       throw new BadRequestException(
         "La franja horaria debe permitir al menos una opción completa",
       );
@@ -682,7 +740,9 @@ export class GatheringsService {
     const windowStart = dto.windowStart
       ? new Date(dto.windowStart)
       : current.windowStart;
-    const windowEnd = dto.windowEnd ? new Date(dto.windowEnd) : current.windowEnd;
+    const windowEnd = dto.windowEnd
+      ? new Date(dto.windowEnd)
+      : current.windowEnd;
     const durationMinutes = dto.durationMinutes ?? current.durationMinutes;
     const dailyStartMinutes =
       dto.dailyStartMinutes ?? current.dailyStartMinutes;
@@ -724,7 +784,9 @@ export class GatheringsService {
         data: {
           title: dto.title?.trim() ?? current.title,
           locationHint:
-            dto.locationHint === undefined ? current.locationHint : locationHint || null,
+            dto.locationHint === undefined
+              ? current.locationHint
+              : locationHint || null,
           locationLatitude: locationChanged ? null : current.locationLatitude,
           locationLongitude: locationChanged ? null : current.locationLongitude,
           windowStart,
@@ -836,9 +898,7 @@ export class GatheringsService {
     // matching agrupa por instante exacto, así que un horario que no esté en la
     // grilla quedaría aislado para siempre en vez de cruzar con el del resto.
     const offered = new Set(
-      this.slotsFor(gathering).map(
-        (slot) => `${slot.startsAt}_${slot.endsAt}`,
-      ),
+      this.slotsFor(gathering).map((slot) => `${slot.startsAt}_${slot.endsAt}`),
     );
     const invalidSlot = slots.some(
       (slot) =>
@@ -978,23 +1038,29 @@ export class GatheringsService {
       );
     }
 
-    return this.prisma.participant.update({
-      where: { id: participantId },
-      data: {
-        dietaryPreferences: dto.dietaryPreferences,
-        mealArrangement:
-          dto.dietaryPreferences.length > 0 ? dto.mealArrangement : null,
-      },
-      select: {
-        id: true,
-        name: true,
-        avatarUrl: true,
-        isOrganizer: true,
-        dietaryPreferences: true,
-        mealArrangement: true,
-        expensesReadyAt: true,
-      },
-    });
+    return withActiveGatheringService(
+      this.prisma,
+      gatheringId,
+      "alimentacion",
+      (transaction) =>
+        transaction.participant.update({
+          where: { id: participantId },
+          data: {
+            dietaryPreferences: dto.dietaryPreferences,
+            mealArrangement:
+              dto.dietaryPreferences.length > 0 ? dto.mealArrangement : null,
+          },
+          select: {
+            id: true,
+            name: true,
+            avatarUrl: true,
+            isOrganizer: true,
+            dietaryPreferences: true,
+            mealArrangement: true,
+            expensesReadyAt: true,
+          },
+        }),
+    );
   }
 
   async getPurchasePlan(gatheringId: string) {
@@ -1061,85 +1127,91 @@ export class GatheringsService {
     }
 
     const participantCount = participant.gathering._count.participants;
-    const plan = await this.prisma.$transaction(async (transaction) => {
-      const savedPlan = await transaction.purchasePlan.upsert({
-        where: { gatheringId },
-        create: {
-          gatheringId,
-          includeAlcohol: dto.includeAlcohol,
-          ageConfirmed: dto.includeAlcohol && dto.ageConfirmed,
-          participantBaseline: participantCount,
-          updatedByParticipantId: participant.id,
-        },
-        update: {
-          includeAlcohol: dto.includeAlcohol,
-          ageConfirmed: dto.includeAlcohol && dto.ageConfirmed,
-          participantBaseline: participantCount,
-          updatedByParticipantId: participant.id,
-        },
-      });
+    const plan = await withActiveGatheringService(
+      this.prisma,
+      gatheringId,
+      "compra",
+      async (transaction) => {
+        const savedPlan = await transaction.purchasePlan.upsert({
+          where: { gatheringId },
+          create: {
+            gatheringId,
+            includeAlcohol: dto.includeAlcohol,
+            ageConfirmed: dto.includeAlcohol && dto.ageConfirmed,
+            participantBaseline: participantCount,
+            updatedByParticipantId: participant.id,
+          },
+          update: {
+            includeAlcohol: dto.includeAlcohol,
+            ageConfirmed: dto.includeAlcohol && dto.ageConfirmed,
+            participantBaseline: participantCount,
+            updatedByParticipantId: participant.id,
+          },
+        });
 
-      await Promise.all(
-        purchaseCatalog.map((item, position) => {
-          const quantity =
-            quantities.get(item.key) ?? item.suggest(participantCount);
-          const isActive =
-            quantity > 0 &&
-            (item.category !== PurchaseCategory.ALCOHOL || dto.includeAlcohol);
-          return transaction.purchaseItem.upsert({
-            where: {
-              purchasePlanId_key: {
+        await Promise.all(
+          purchaseCatalog.map((item, position) => {
+            const quantity =
+              quantities.get(item.key) ?? item.suggest(participantCount);
+            const isActive =
+              quantity > 0 &&
+              (item.category !== PurchaseCategory.ALCOHOL ||
+                dto.includeAlcohol);
+            return transaction.purchaseItem.upsert({
+              where: {
+                purchasePlanId_key: {
+                  purchasePlanId: savedPlan.id,
+                  key: item.key,
+                },
+              },
+              create: {
                 purchasePlanId: savedPlan.id,
                 key: item.key,
+                label: item.label,
+                unit: item.unit,
+                quantity,
+                category: item.category,
+                position,
               },
-            },
-            create: {
-              purchasePlanId: savedPlan.id,
-              key: item.key,
-              label: item.label,
-              unit: item.unit,
-              quantity,
-              category: item.category,
-              position,
-            },
-            update: {
-              label: item.label,
-              unit: item.unit,
-              quantity,
-              category: item.category,
-              position,
-              ...(!isActive && {
-                assignedParticipantId: null,
-                assignedAt: null,
-                isReady: false,
-              }),
-            },
-          });
-        }),
-      );
+              update: {
+                label: item.label,
+                unit: item.unit,
+                quantity,
+                category: item.category,
+                position,
+                ...(!isActive && {
+                  assignedParticipantId: null,
+                  assignedAt: null,
+                  isReady: false,
+                }),
+              },
+            });
+          }),
+        );
 
-      return transaction.purchasePlan.findUniqueOrThrow({
-        where: { id: savedPlan.id },
-        include: {
-          items: {
-            orderBy: { position: "asc" },
-            include: {
-              assignee: {
-                select: { id: true, name: true, avatarUrl: true },
-              },
-              contributions: {
-                orderBy: { updatedAt: "desc" },
-                include: {
-                  participant: {
-                    select: { id: true, name: true, avatarUrl: true },
+        return transaction.purchasePlan.findUniqueOrThrow({
+          where: { id: savedPlan.id },
+          include: {
+            items: {
+              orderBy: { position: "asc" },
+              include: {
+                assignee: {
+                  select: { id: true, name: true, avatarUrl: true },
+                },
+                contributions: {
+                  orderBy: { updatedAt: "desc" },
+                  include: {
+                    participant: {
+                      select: { id: true, name: true, avatarUrl: true },
+                    },
                   },
                 },
               },
             },
           },
-        },
-      });
-    });
+        });
+      },
+    );
 
     return this.serializePurchasePlan(participantCount, plan);
   }
@@ -1164,89 +1236,94 @@ export class GatheringsService {
     }
 
     const participantCount = participant.gathering._count.participants;
-    const plan = await this.prisma.$transaction(async (transaction) => {
-      const savedPlan = await transaction.purchasePlan.upsert({
-        where: { gatheringId },
-        create: {
-          gatheringId,
-          participantBaseline: participantCount,
-        },
-        update: {},
-      });
+    const plan = await withActiveGatheringService(
+      this.prisma,
+      gatheringId,
+      "compra",
+      async (transaction) => {
+        const savedPlan = await transaction.purchasePlan.upsert({
+          where: { gatheringId },
+          create: {
+            gatheringId,
+            participantBaseline: participantCount,
+          },
+          update: {},
+        });
 
-      if (catalogItem.category === PurchaseCategory.ALCOHOL) {
-        if (!savedPlan.includeAlcohol || !savedPlan.ageConfirmed) {
-          throw new BadRequestException(
-            "El alcohol no está habilitado por quien organiza",
-          );
+        if (catalogItem.category === PurchaseCategory.ALCOHOL) {
+          if (!savedPlan.includeAlcohol || !savedPlan.ageConfirmed) {
+            throw new BadRequestException(
+              "El alcohol no está habilitado por quien organiza",
+            );
+          }
+          if (dto.action === "claim" && dto.adultConfirmed !== true) {
+            throw new BadRequestException(
+              "Confirmá que sos mayor de 18 años para hacerte cargo",
+            );
+          }
         }
-        if (dto.action === "claim" && dto.adultConfirmed !== true) {
-          throw new BadRequestException(
-            "Confirmá que sos mayor de 18 años para hacerte cargo",
-          );
-        }
-      }
 
-      const item = await transaction.purchaseItem.upsert({
-        where: {
-          purchasePlanId_key: {
+        const item = await transaction.purchaseItem.upsert({
+          where: {
+            purchasePlanId_key: {
+              purchasePlanId: savedPlan.id,
+              key: catalogItem.key,
+            },
+          },
+          create: {
             purchasePlanId: savedPlan.id,
             key: catalogItem.key,
+            label: catalogItem.label,
+            unit: catalogItem.unit,
+            quantity: catalogItem.suggest(participantCount),
+            category: catalogItem.category,
+            position: purchaseCatalog.indexOf(catalogItem),
           },
-        },
-        create: {
-          purchasePlanId: savedPlan.id,
-          key: catalogItem.key,
-          label: catalogItem.label,
-          unit: catalogItem.unit,
-          quantity: catalogItem.suggest(participantCount),
-          category: catalogItem.category,
-          position: purchaseCatalog.indexOf(catalogItem),
-        },
-        update: {
-          label: catalogItem.label,
-          unit: catalogItem.unit,
-          category: catalogItem.category,
-          position: purchaseCatalog.indexOf(catalogItem),
-        },
-      });
+          update: {
+            label: catalogItem.label,
+            unit: catalogItem.unit,
+            category: catalogItem.category,
+            position: purchaseCatalog.indexOf(catalogItem),
+          },
+        });
 
-      if (item.quantity < 1) {
-        throw new BadRequestException(
-          "Este producto no está activo en la compra",
+        if (item.quantity < 1) {
+          throw new BadRequestException(
+            "Este producto no está activo en la compra",
+          );
+        }
+
+        await this.applyPurchaseResponsibilityAction(
+          transaction,
+          item.id,
+          item.assignedParticipantId,
+          participant,
+          dto.action,
         );
-      }
 
-      await this.applyPurchaseResponsibilityAction(
-        transaction,
-        item.id,
-        item.assignedParticipantId,
-        participant,
-        dto.action,
-      );
-
-      return transaction.purchasePlan.findUniqueOrThrow({
-        where: { id: savedPlan.id },
-        include: {
-          items: {
-            orderBy: { position: "asc" },
-            include: {
-              assignee: {
-                select: { id: true, name: true, avatarUrl: true },
-              },
-              contributions: {
-                orderBy: { updatedAt: "desc" },
-                include: {
-                  participant: {
-                    select: { id: true, name: true, avatarUrl: true },
+        return transaction.purchasePlan.findUniqueOrThrow({
+          where: { id: savedPlan.id },
+          include: {
+            items: {
+              orderBy: { position: "asc" },
+              include: {
+                assignee: {
+                  select: { id: true, name: true, avatarUrl: true },
+                },
+                contributions: {
+                  orderBy: { updatedAt: "desc" },
+                  include: {
+                    participant: {
+                      select: { id: true, name: true, avatarUrl: true },
+                    },
                   },
                 },
               },
             },
           },
-        },
-      });
-    });
+        });
+      },
+    );
 
     return {
       plan: this.serializePurchasePlan(participantCount, plan),
@@ -1317,82 +1394,87 @@ export class GatheringsService {
       throw new BadRequestException("Indicá la presentación del aporte");
     }
 
-    await this.prisma.$transaction(async (transaction) => {
-      const plan = await transaction.purchasePlan.upsert({
-        where: { gatheringId },
-        create: {
-          gatheringId,
-          participantBaseline: participant.gathering._count.participants,
-        },
-        update: {},
-      });
-      if (catalogItem.category === PurchaseCategory.ALCOHOL) {
-        if (!plan.includeAlcohol || !plan.ageConfirmed) {
-          throw new BadRequestException(
-            "Las bebidas con alcohol no están habilitadas por quien organiza",
-          );
+    await withActiveGatheringService(
+      this.prisma,
+      gatheringId,
+      "compra",
+      async (transaction) => {
+        const plan = await transaction.purchasePlan.upsert({
+          where: { gatheringId },
+          create: {
+            gatheringId,
+            participantBaseline: participant.gathering._count.participants,
+          },
+          update: {},
+        });
+        if (catalogItem.category === PurchaseCategory.ALCOHOL) {
+          if (!plan.includeAlcohol || !plan.ageConfirmed) {
+            throw new BadRequestException(
+              "Las bebidas con alcohol no están habilitadas por quien organiza",
+            );
+          }
+          if (dto.adultConfirmed !== true) {
+            throw new BadRequestException(
+              "Confirmá que sos mayor de 18 años para sumar este aporte",
+            );
+          }
         }
-        if (dto.adultConfirmed !== true) {
-          throw new BadRequestException(
-            "Confirmá que sos mayor de 18 años para sumar este aporte",
-          );
-        }
-      }
 
-      const item = await transaction.purchaseItem.upsert({
-        where: {
-          purchasePlanId_key: {
+        const item = await transaction.purchaseItem.upsert({
+          where: {
+            purchasePlanId_key: {
+              purchasePlanId: plan.id,
+              key: catalogItem.key,
+            },
+          },
+          create: {
             purchasePlanId: plan.id,
             key: catalogItem.key,
+            label: catalogItem.label,
+            unit: catalogItem.unit,
+            quantity: catalogItem.suggest(
+              participant.gathering._count.participants,
+            ),
+            category: catalogItem.category,
+            position: purchaseCatalog.indexOf(catalogItem),
           },
-        },
-        create: {
-          purchasePlanId: plan.id,
-          key: catalogItem.key,
-          label: catalogItem.label,
-          unit: catalogItem.unit,
-          quantity: catalogItem.suggest(
-            participant.gathering._count.participants,
-          ),
-          category: catalogItem.category,
-          position: purchaseCatalog.indexOf(catalogItem),
-        },
-        update: {
-          label: catalogItem.label,
-          unit: catalogItem.unit,
-          category: catalogItem.category,
-          position: purchaseCatalog.indexOf(catalogItem),
-        },
-      });
+          update: {
+            label: catalogItem.label,
+            unit: catalogItem.unit,
+            category: catalogItem.category,
+            position: purchaseCatalog.indexOf(catalogItem),
+          },
+        });
 
-      await transaction.purchaseContribution.upsert({
-        where: {
-          purchaseItemId_participantId: {
+        await transaction.purchaseContribution.upsert({
+          where: {
+            purchaseItemId_participantId: {
+              purchaseItemId: item.id,
+              participantId,
+            },
+          },
+          create: {
             purchaseItemId: item.id,
             participantId,
+            catalogProductId: catalogProduct?.id ?? null,
+            catalogPresentationId: catalogPresentation?.id ?? null,
+            description,
+            quantity: dto.quantity,
+            unit,
+            note: dto.note?.trim() || null,
           },
-        },
-        create: {
-          purchaseItemId: item.id,
-          participantId,
-          catalogProductId: catalogProduct?.id ?? null,
-          catalogPresentationId: catalogPresentation?.id ?? null,
-          description,
-          quantity: dto.quantity,
-          unit,
-          note: dto.note?.trim() || null,
-        },
-        update: {
-          catalogProductId: catalogProduct?.id ?? null,
-          catalogPresentationId: catalogPresentation?.id ?? null,
-          description,
-          quantity: dto.quantity,
-          unit,
-          note: dto.note?.trim() || null,
-          isReady: false,
-        },
-      });
-    });
+          update: {
+            catalogProductId: catalogProduct?.id ?? null,
+            catalogPresentationId: catalogPresentation?.id ?? null,
+            description,
+            quantity: dto.quantity,
+            unit,
+            note: dto.note?.trim() || null,
+            isReady: false,
+          },
+        });
+      },
+    );
 
     return {
       plan: await this.getPurchasePlan(gatheringId),
@@ -1436,10 +1518,16 @@ export class GatheringsService {
     ) {
       throw new ForbiddenException("Sólo quien aportó puede marcarlo listo");
     }
-    await this.prisma.purchaseContribution.update({
-      where: { id: contributionId },
-      data: { isReady: dto.isReady },
-    });
+    await withActiveGatheringService(
+      this.prisma,
+      gatheringId,
+      "compra",
+      (transaction) =>
+        transaction.purchaseContribution.update({
+          where: { id: contributionId },
+          data: { isReady: dto.isReady },
+        }),
+    );
     return {
       plan: await this.getPurchasePlan(gatheringId),
       activity: {
@@ -1481,9 +1569,15 @@ export class GatheringsService {
     ) {
       throw new ForbiddenException("Sólo quien aportó puede quitarlo");
     }
-    await this.prisma.purchaseContribution.delete({
-      where: { id: contributionId },
-    });
+    await withActiveGatheringService(
+      this.prisma,
+      gatheringId,
+      "compra",
+      (transaction) =>
+        transaction.purchaseContribution.delete({
+          where: { id: contributionId },
+        }),
+    );
     return {
       plan: await this.getPurchasePlan(gatheringId),
       activity: {
@@ -1534,21 +1628,26 @@ export class GatheringsService {
       // propósito: si el índice único rechaza el insert, el incremento de
       // `expenseRound` se deshace con el rollback y el reintento no
       // invalida las transferencias una segunda vez.
-      return await this.prisma.$transaction(async (transaction) => {
-        await this.reopenExpenses(transaction, gatheringId);
-        return transaction.expense.create({
-          data: {
-            gatheringId,
-            paidByParticipantId: participantId,
-            description: dto.description.trim(),
-            amountCents: dto.amountCents,
-            idempotencyKey,
-          },
-          include: {
-            paidBy: { select: { id: true, name: true, avatarUrl: true } },
-          },
-        });
-      });
+      return await withActiveGatheringService(
+        this.prisma,
+        gatheringId,
+        "cuentas",
+        async (transaction) => {
+          await this.reopenExpenses(transaction, gatheringId);
+          return transaction.expense.create({
+            data: {
+              gatheringId,
+              paidByParticipantId: participantId,
+              description: dto.description.trim(),
+              amountCents: dto.amountCents,
+              idempotencyKey,
+            },
+            include: {
+              paidBy: { select: { id: true, name: true, avatarUrl: true } },
+            },
+          });
+        },
+      );
     } catch (error) {
       if (!this.isUniqueViolation(error)) throw error;
       // Otro request con la misma clave llegó primero. Devolvemos su gasto:
@@ -1609,19 +1708,24 @@ export class GatheringsService {
       );
     }
 
-    const updated = await this.prisma.$transaction(async (transaction) => {
-      await this.reopenExpenses(transaction, gatheringId);
-      return transaction.expense.update({
-        where: { id: expenseId },
-        data: {
-          description: dto.description.trim(),
-          amountCents: dto.amountCents,
-        },
-        include: {
-          paidBy: { select: { id: true, name: true, avatarUrl: true } },
-        },
-      });
-    });
+    const updated = await withActiveGatheringService(
+      this.prisma,
+      gatheringId,
+      "cuentas",
+      async (transaction) => {
+        await this.reopenExpenses(transaction, gatheringId);
+        return transaction.expense.update({
+          where: { id: expenseId },
+          data: {
+            description: dto.description.trim(),
+            amountCents: dto.amountCents,
+          },
+          include: {
+            paidBy: { select: { id: true, name: true, avatarUrl: true } },
+          },
+        });
+      },
+    );
     return { expense: updated, participantName: participant.name };
   }
 
@@ -1649,15 +1753,39 @@ export class GatheringsService {
       );
     }
 
-    await this.prisma.$transaction(async (transaction) => {
-      await this.reopenExpenses(transaction, gatheringId);
-      await transaction.expense.delete({ where: { id: expenseId } });
-    });
+    await withActiveGatheringService(
+      this.prisma,
+      gatheringId,
+      "cuentas",
+      async (transaction) => {
+        await this.reopenExpenses(transaction, gatheringId);
+        await transaction.expense.delete({ where: { id: expenseId } });
+      },
+    );
     return { id: expenseId, participantName: participant.name };
   }
 
   async getExpenseSettlement(gatheringId: string) {
-    const gathering = await this.prisma.gathering.findUnique({
+    const state = await this.prisma.gathering.findUnique({
+      where: { id: gatheringId },
+      select: { disabledServices: true, archivedExpenseSettlement: true },
+    });
+    if (
+      state?.disabledServices?.includes("cuentas") &&
+      state.archivedExpenseSettlement
+    ) {
+      return state.archivedExpenseSettlement as unknown as Awaited<
+        ReturnType<GatheringsService["calculateExpenseSettlement"]>
+      >;
+    }
+    return this.calculateExpenseSettlement(gatheringId);
+  }
+
+  private async calculateExpenseSettlement(
+    gatheringId: string,
+    database: Prisma.TransactionClient = this.prisma,
+  ) {
+    const gathering = await database.gathering.findUnique({
       where: { id: gatheringId },
       include: {
         participants: { orderBy: { createdAt: "asc" } },
@@ -1879,25 +2007,30 @@ export class GatheringsService {
     );
 
     const paymentAlias = this.normalizePaymentAlias(dto.paymentAlias);
-    return this.prisma.$transaction(async (transaction) => {
-      if (participant.authUserId && identity?.id === participant.authUserId) {
-        await transaction.userPaymentProfile.upsert({
-          where: { authUserId: participant.authUserId },
-          create: { authUserId: participant.authUserId, paymentAlias },
-          update: { paymentAlias },
-        });
-        await transaction.participant.updateMany({
-          where: { authUserId: participant.authUserId },
-          data: { paymentAlias },
-        });
-      } else {
-        await transaction.participant.update({
-          where: { id: participant.id },
-          data: { paymentAlias },
-        });
-      }
-      return { ...participant, paymentAlias };
-    });
+    return withActiveGatheringService(
+      this.prisma,
+      gatheringId,
+      "cuentas",
+      async (transaction) => {
+        if (participant.authUserId && identity?.id === participant.authUserId) {
+          await transaction.userPaymentProfile.upsert({
+            where: { authUserId: participant.authUserId },
+            create: { authUserId: participant.authUserId, paymentAlias },
+            update: { paymentAlias },
+          });
+          await transaction.participant.updateMany({
+            where: { authUserId: participant.authUserId },
+            data: { paymentAlias },
+          });
+        } else {
+          await transaction.participant.update({
+            where: { id: participant.id },
+            data: { paymentAlias },
+          });
+        }
+        return { ...participant, paymentAlias };
+      },
+    );
   }
 
   async markExpensesReady(
@@ -1912,11 +2045,17 @@ export class GatheringsService {
       "No podés confirmar por otra persona",
     );
 
-    return this.prisma.participant.update({
-      where: { id: participantId },
-      data: { expensesReadyAt: new Date() },
-      select: { id: true, name: true, expensesReadyAt: true },
-    });
+    return withActiveGatheringService(
+      this.prisma,
+      gatheringId,
+      "cuentas",
+      (transaction) =>
+        transaction.participant.update({
+          where: { id: participantId },
+          data: { expensesReadyAt: new Date() },
+          select: { id: true, name: true, expensesReadyAt: true },
+        }),
+    );
   }
 
   async confirmTransfer(
@@ -1932,49 +2071,59 @@ export class GatheringsService {
       "No podés confirmar esta transferencia",
     );
 
-    const settlement = await this.getExpenseSettlement(gatheringId);
-    if (!settlement.allReady) {
-      throw new BadRequestException(
-        "El grupo todavía no terminó de cargar todos los gastos",
-      );
-    }
-    const transfer = settlement.transfers.find(
-      (candidate) =>
-        candidate.fromParticipantId === participantId &&
-        candidate.toParticipantId === dto.toParticipantId &&
-        candidate.amountCents === dto.amountCents,
-    );
-    if (!transfer) {
-      throw new BadRequestException(
-        "La transferencia ya no coincide con la división actual",
-      );
-    }
-
-    // La confirmación se guarda contra la ronda de gastos vigente. Antes la
-    // clave incluía el monto, así que un segundo pago por el mismo importe
-    // entre las mismas dos personas pisaba al primero y la plata se perdía.
-    return this.prisma.transferConfirmation.upsert({
-      where: {
-        roundPair: {
+    return withActiveGatheringService(
+      this.prisma,
+      gatheringId,
+      "cuentas",
+      async (transaction) => {
+        const settlement = await this.calculateExpenseSettlement(
           gatheringId,
-          expenseRound: settlement.expenseRound,
-          fromParticipantId: participantId,
-          toParticipantId: dto.toParticipantId,
-        },
+          transaction,
+        );
+        if (!settlement.allReady) {
+          throw new BadRequestException(
+            "El grupo todavía no terminó de cargar todos los gastos",
+          );
+        }
+        const transfer = settlement.transfers.find(
+          (candidate) =>
+            candidate.fromParticipantId === participantId &&
+            candidate.toParticipantId === dto.toParticipantId &&
+            candidate.amountCents === dto.amountCents,
+        );
+        if (!transfer) {
+          throw new BadRequestException(
+            "La transferencia ya no coincide con la división actual",
+          );
+        }
+
+        // La confirmación se guarda contra la ronda de gastos vigente. Antes la
+        // clave incluía el monto, así que un segundo pago por el mismo importe
+        // entre las mismas dos personas pisaba al primero y la plata se perdía.
+        return transaction.transferConfirmation.upsert({
+          where: {
+            roundPair: {
+              gatheringId,
+              expenseRound: settlement.expenseRound,
+              fromParticipantId: participantId,
+              toParticipantId: dto.toParticipantId,
+            },
+          },
+          create: {
+            gatheringId,
+            expenseRound: settlement.expenseRound,
+            fromParticipantId: participantId,
+            toParticipantId: dto.toParticipantId,
+            amountCents: dto.amountCents,
+          },
+          update: { amountCents: dto.amountCents, confirmedAt: new Date() },
+          include: {
+            fromParticipant: { select: { id: true, name: true } },
+            toParticipant: { select: { id: true, name: true } },
+          },
+        });
       },
-      create: {
-        gatheringId,
-        expenseRound: settlement.expenseRound,
-        fromParticipantId: participantId,
-        toParticipantId: dto.toParticipantId,
-        amountCents: dto.amountCents,
-      },
-      update: { amountCents: dto.amountCents, confirmedAt: new Date() },
-      include: {
-        fromParticipant: { select: { id: true, name: true } },
-        toParticipant: { select: { id: true, name: true } },
-      },
-    });
+    );
   }
 
   private async reopenExpenses(
@@ -2091,7 +2240,9 @@ export class GatheringsService {
   ) {
     await this.ensureGathering(gatheringId);
     const existing = await this.prisma.participant.findUnique({
-      where: { gatheringId_authUserId: { gatheringId, authUserId: identity.id } },
+      where: {
+        gatheringId_authUserId: { gatheringId, authUserId: identity.id },
+      },
       select: { id: true },
     });
     // Sólo se cuenta contra el tope si esto va a crear una fila nueva: quien
@@ -2147,7 +2298,8 @@ export class GatheringsService {
       },
     });
     if (existing) {
-      if (existing.paymentAlias || !paymentProfile?.paymentAlias) return existing;
+      if (existing.paymentAlias || !paymentProfile?.paymentAlias)
+        return existing;
       return this.prisma.participant.update({
         where: { id: existing.id },
         data: { paymentAlias: paymentProfile.paymentAlias },
