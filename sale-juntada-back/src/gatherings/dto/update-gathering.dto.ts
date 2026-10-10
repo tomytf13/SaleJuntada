@@ -1,6 +1,7 @@
 import { Type } from "class-transformer";
 import {
   IsDateString,
+  IsBoolean,
   IsInt,
   IsOptional,
   IsString,
@@ -11,6 +12,10 @@ import {
 } from "class-validator";
 
 export class UpdateGatheringDto {
+  @IsOptional()
+  @IsBoolean()
+  fixedSchedule?: boolean;
+
   @IsOptional()
   @IsString()
   @MinLength(3)

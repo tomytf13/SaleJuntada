@@ -1601,6 +1601,7 @@ function GatheringWorkspace() {
                         }).format(new Date(activeGathering.finalizedStart))}
                       </p>
                     ) : null}
+                    {activeGathering.finalizedEnd ? <p>Termina: {new Intl.DateTimeFormat("es-AR", { timeZone: activeGathering.timeZone, dateStyle: "full", timeStyle: "short" }).format(new Date(activeGathering.finalizedEnd))}</p> : null}
                     <p>📍 {location}</p>
                     {activeGathering?.status === "OPEN" && (
                       <p>
@@ -1629,7 +1630,7 @@ function GatheringWorkspace() {
                         <div className="card-title-row">
                           <div>
                             <h3>¿Cuándo podés?</h3>
-                            <p>Podés elegir más de una opción.</p>
+                            <p>Cada opción muestra inicio y fin. Podés elegir más de una.</p>
                           </div>
                           <AnimatePresence mode="wait" initial={false}>
                             <m.span
@@ -1692,7 +1693,7 @@ function GatheringWorkspace() {
                                     <m.button
                                       key={slot.id}
                                       className={`time-option ${selected ? "selected" : ""}`}
-                                      aria-label={`${slot.day} ${slot.date} · ${slot.time}`}
+                                      aria-label={`${slot.day} ${slot.date} · ${slot.range ?? slot.time}`}
                                       aria-pressed={selected}
                                       disabled={
                                         activeGathering?.status ===
@@ -1703,7 +1704,7 @@ function GatheringWorkspace() {
                                       whileTap={{ scale: 0.965 }}
                                       layout
                                     >
-                                      <span>{slot.time}</span>
+                                      <span>{slot.range ?? slot.time}</span>
                                       <m.i
                                         key={
                                           selected ? "selected" : "available"

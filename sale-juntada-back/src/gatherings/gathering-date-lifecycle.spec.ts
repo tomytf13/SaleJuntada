@@ -503,3 +503,40 @@ describe("cancelGathering — conserva el contexto", () => {
     expect(gathering.windowStart).toBe(windowStart);
   });
 });
+
+describe("horario fijo desde administración", () => {
+  const input = {
+    fixedSchedule: true,
+    windowStart: "2026-10-11T00:00:00.000Z",
+    windowEnd: "2026-10-11T07:00:00.000Z",
+    durationMinutes: 420,
+    dailyStartMinutes: 1260,
+    dailyEndMinutes: 1680,
+  };
+  it("confirma siete horas cruzando medianoche y conserva la confirmación al editar el nombre", async () => {
+    const { service, gathering, byId } = buildWorld({});
+    await service.updateGathering("gathering", "organizer", TOKEN, input);
+    expect(gathering.status).toBe(GatheringStatus.CONFIRMED);
+    expect(gathering.finalizedStart?.toISOString()).toBe(input.windowStart);
+    expect(gathering.finalizedEnd?.toISOString()).toBe(input.windowEnd);
+    expect(byId("organizer").rsvpStatus).toBe(RsvpStatus.GOING);
+    expect(byId("a").rsvpStatus).toBeNull();
+    byId("a").rsvpStatus = RsvpStatus.GOING;
+    await service.updateGathering("gathering", "organizer", TOKEN, {
+      ...input,
+      title: "Cumple x3",
+    });
+    expect(byId("a").rsvpStatus).toBe(RsvpStatus.GOING);
+    expect(gathering.status).toBe(GatheringStatus.CONFIRMED);
+  });
+  it("rechaza duración inconsistente antes de guardar", async () => {
+    const { service, gathering } = buildWorld({});
+    await expect(
+      service.updateGathering("gathering", "organizer", TOKEN, {
+        ...input,
+        durationMinutes: 300,
+      }),
+    ).rejects.toThrow("La duración debe coincidir");
+    expect(gathering.status).toBe(GatheringStatus.OPEN);
+  });
+});

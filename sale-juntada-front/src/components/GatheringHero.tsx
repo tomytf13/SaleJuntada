@@ -8,6 +8,7 @@ import {
   Users,
 } from "lucide-react";
 import { Link } from "react-router-dom";
+import { calendarDate, clockTime } from "../utils/schedule";
 import type { Gathering } from "../services/gatheringService";
 
 export function GatheringHero({
@@ -48,7 +49,11 @@ export function GatheringHero({
         {time ? (
           <span className="invite-time">
             <Clock3 size={14} aria-hidden="true" />
-            {time} h
+            {time}
+            {gathering.finalizedEnd
+              ? ` – ${clockTime(gathering.finalizedEnd, gathering.timeZone)}${calendarDate(gathering.finalizedEnd, gathering.timeZone) !== calendarDate(gathering.finalizedStart!, gathering.timeZone) ? " (día siguiente)" : ""}`
+              : ""}{" "}
+            h
           </span>
         ) : (
           <span>El horario se define entre todos</span>

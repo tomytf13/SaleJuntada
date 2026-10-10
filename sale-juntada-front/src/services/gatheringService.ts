@@ -238,6 +238,7 @@ export type ExpenseSettlement = {
 };
 
 export type UpdateGatheringInput = {
+  fixedSchedule?: boolean;
   title: string;
   locationHint: string;
   windowStart: string;

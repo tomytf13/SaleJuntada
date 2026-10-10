@@ -5,6 +5,7 @@ export type Slot = {
   day: string;
   date: string;
   time: string;
+  range?: string;
   startsAt: string;
   endsAt: string;
 };
@@ -101,7 +102,9 @@ export function storeParticipantSession(
   );
 }
 
-export function readParticipantSession(slug: string): ParticipantSession | null {
+export function readParticipantSession(
+  slug: string,
+): ParticipantSession | null {
   try {
     const value = localStorage.getItem(sessionKey(slug));
     return value ? (JSON.parse(value) as ParticipantSession) : null;
@@ -143,6 +146,7 @@ export function decorateSlot(slot: GatheringSlot, timeZone?: string): Slot {
     day: capitalize(day),
     date: capitalize(date),
     time,
+    range: `${time} – ${new Intl.DateTimeFormat("es-AR", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", ...zone }).format(new Date(slot.endsAt))}${new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit", ...zone }).format(startsAt) !== new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit", ...zone }).format(new Date(slot.endsAt)) ? " (día siguiente)" : ""}`,
     startsAt: slot.startsAt,
     endsAt: slot.endsAt,
   };
