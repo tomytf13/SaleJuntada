@@ -27,6 +27,8 @@ const auth = vi.hoisted(() => ({
 const service = vi.hoisted(() => ({
   getBySlug: vi.fn(),
   addParticipant: vi.fn(),
+  addAuthenticatedParticipant: vi.fn(),
+  linkAuthenticatedParticipant: vi.fn().mockResolvedValue({}),
   setRsvp: vi.fn(),
   getMatches: vi.fn().mockResolvedValue([]),
   getExpenseSettlement: vi.fn().mockResolvedValue(null),
@@ -92,6 +94,8 @@ beforeEach(() => {
   live.emit.mockReset();
   service.setRsvp.mockReset();
   service.addParticipant.mockReset();
+  service.addAuthenticatedParticipant.mockReset();
+  service.linkAuthenticatedParticipant.mockResolvedValue({});
   service.getMatches.mockResolvedValue([]);
   service.getExpenseSettlement.mockResolvedValue(null);
   service.getPaymentDetails.mockResolvedValue(null);
@@ -223,6 +227,34 @@ describe("invitación y asistencia en vivo", () => {
     expect(screen.getByLabelText("Tu nombre")).toBeVisible();
   });
 
+  it("guarda el teléfono normalizado y recupera la participación de Google", async () => {
+    auth.value.user = { email: "sofi@example.com", user_metadata: { full_name: "Sofi" } };
+    auth.value.accessToken = "google-session";
+    service.getBySlug.mockImplementation((_slug: string, token?: string) => Promise.resolve(
+      token ? privateGathering : { ...privateGathering, participants: [], isParticipant: false },
+    ));
+    service.addAuthenticatedParticipant.mockResolvedValue({ ...privateGathering.participants[0], responseToken: "secret" });
+    renderGatheringPage("asado-hoy");
+    await userEvent.click(await screen.findByRole("button", { name: /sumarme/i }));
+    expect(screen.getByLabelText("Tu nombre")).toHaveValue("Sofi");
+    await userEvent.type(screen.getByLabelText(/Teléfono de contacto/), "+54 (9) 381-123-4567");
+    await userEvent.click(screen.getByRole("button", { name: "Entrar y responder" }));
+    await waitFor(() => expect(service.addAuthenticatedParticipant).toHaveBeenCalledWith("gathering-1", "google-session", { name: "Sofi", contact: "+5493811234567" }));
+    expect(service.addParticipant).not.toHaveBeenCalled();
+    await screen.findByRole("radiogroup", { name: "Tu asistencia" });
+  });
+
+  it("pide código de país antes de enviar el teléfono", async () => {
+    service.getBySlug.mockResolvedValue({ ...privateGathering, participants: [], isParticipant: false });
+    renderGatheringPage("asado-hoy");
+    await userEvent.click(await screen.findByRole("button", { name: /sumarme/i }));
+    await userEvent.type(screen.getByLabelText("Tu nombre"), "Sofi");
+    await userEvent.type(screen.getByLabelText(/Teléfono de contacto/), "3811234567");
+    await userEvent.click(screen.getByRole("button", { name: "Entrar y responder" }));
+    expect((await screen.findAllByRole("alert"))[0]).toHaveTextContent("código de país");
+    expect(service.addParticipant).not.toHaveBeenCalled();
+  });
+
   it("se suma con nombre y obtiene la vista privada antes de responder", async () => {
     service.getBySlug.mockImplementation((_slug: string, token?: string) =>
       Promise.resolve(
@@ -241,11 +273,13 @@ describe("invitación y asistencia en vivo", () => {
       await screen.findByRole("button", { name: /sumarme/i }),
     );
     await userEvent.type(screen.getByLabelText("Tu nombre"), "Sofi");
+    await userEvent.type(screen.getByLabelText(/Teléfono de contacto/), "+54 9 381 123 4567");
     await userEvent.click(
       screen.getByRole("button", { name: "Entrar y responder" }),
     );
     await screen.findByRole("radiogroup", { name: "Tu asistencia" });
     expect(service.getBySlug).toHaveBeenCalledWith("asado-hoy", "secret");
+    expect(service.addParticipant).toHaveBeenCalledWith("gathering-1", "Sofi", "emoji:🦆", false, "+5493811234567");
     await userEvent.click(screen.getByRole("link", { name: /Invitados 1 van/ }));
     expect(screen.getByText("Tomy")).toBeVisible();
     await userEvent.click(screen.getByRole("radio", { name: "Voy" }));

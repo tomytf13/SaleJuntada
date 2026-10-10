@@ -2263,12 +2263,12 @@ export class GatheringsService {
         gatheringId,
         authUserId: identity.id,
         name: dto.name?.trim() || this.nameFromIdentity(identity),
-        contact: identity.email,
+        contact: dto.contact ?? identity.email,
         avatarUrl: dto.avatarUrl,
         paymentAlias: paymentProfile?.paymentAlias,
         responseToken: generateParticipantToken(),
       },
-      update: {},
+      update: dto.contact ? { contact: dto.contact } : {},
     });
   }
 

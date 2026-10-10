@@ -1199,3 +1199,45 @@ describe("GatheringsService addParticipant", () => {
     expect(create).not.toHaveBeenCalled();
   });
 });
+
+describe("contacto de una participación autenticada", () => {
+  it.each([undefined, "+5493811234567"])(
+    "recupera la misma participación sin borrar el contacto omitido",
+    async (contact) => {
+      const upsert = jest
+        .fn()
+        .mockResolvedValue({ id: "existing", responseToken: "same-token" });
+      const prisma = {
+        gathering: {
+          findUnique: jest.fn().mockResolvedValue({ id: "g", status: "OPEN" }),
+        },
+        participant: {
+          findUnique: jest.fn().mockResolvedValue({ id: "existing" }),
+          upsert,
+        },
+        userPaymentProfile: { findUnique: jest.fn().mockResolvedValue(null) },
+      } as unknown as PrismaService;
+      const result = await buildService(prisma).addAuthenticatedParticipant(
+        "g",
+        { id: "google-user", email: "sofi@example.com" },
+        { name: "Sofi", contact },
+      );
+      expect(result.id).toBe("existing");
+      expect(upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            gatheringId_authUserId: {
+              gatheringId: "g",
+              authUserId: "google-user",
+            },
+          },
+          create: expect.objectContaining({
+            contact: contact ?? "sofi@example.com",
+            authUserId: "google-user",
+          }),
+          update: contact ? { contact } : {},
+        }),
+      );
+    },
+  );
+});

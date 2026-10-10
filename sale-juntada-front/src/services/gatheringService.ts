@@ -530,10 +530,11 @@ export const gatheringService = {
     name: string,
     avatarUrl?: string,
     allowDuplicateName?: boolean,
+    contact?: string,
   ) {
     return request<Participant>(`/gatherings/${gatheringId}/participants`, {
       method: "POST",
-      body: JSON.stringify({ name, avatarUrl, allowDuplicateName }),
+      body: JSON.stringify({ name, avatarUrl, allowDuplicateName, contact }),
     });
   },
 
@@ -649,6 +650,18 @@ export const gatheringService = {
         body: JSON.stringify(input),
       },
     );
+  },
+
+  addAuthenticatedParticipant(
+    gatheringId: string,
+    accessToken: string,
+    input: { name: string; contact?: string },
+  ) {
+    return request<Participant>(`/gatherings/${gatheringId}/participants/auth`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify(input),
+    });
   },
 
   linkAuthenticatedParticipant(
