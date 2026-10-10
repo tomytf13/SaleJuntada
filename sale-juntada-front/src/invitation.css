@@ -1,0 +1,307 @@
+/* Invitation as a paper keepsake: editorial title, practical details, ticket footer. */
+.gathering-hero.invitation-card {
+  padding: 0;
+  background: #fffdf8;
+  color: var(--ink);
+  border: 1px solid #dce1d5;
+  border-radius: 26px;
+  box-shadow:
+    0 3px 5px #203d2f03,
+    0 22px 45px -30px #26493850;
+  overflow: hidden;
+}
+.gathering-hero.invitation-card::after {
+  display: none;
+}
+.invite-main {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+}
+.invite-intro {
+  position: relative;
+  isolation: isolate;
+  padding: 38px 34px 34px;
+  background: #f0f2e6;
+  min-width: 0;
+}
+.invite-intro::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: radial-gradient(ellipse at 0% 0%, #e4edc4 0%, transparent 70%);
+}
+.invite-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100% - 52px);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1.6px;
+  line-height: 1.6;
+  color: #4b604c;
+}
+.invite-eyebrow > span {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: #738448;
+}
+.invite-art {
+  position: absolute;
+  top: 24px;
+  right: 25px;
+  width: 64px;
+  height: 64px;
+  display: grid;
+  place-items: center;
+  color: #a15839;
+  transform: rotate(-12deg);
+}
+.invite-art::before {
+  content: "";
+  position: absolute;
+  inset: 7px;
+  z-index: -1;
+  background: #f1c3a7;
+  border-radius: 50%;
+}
+.invite-art-orbit {
+  position: absolute;
+  inset: 0;
+  border: 1px solid #b17b5145;
+  border-radius: 50%;
+  transform: scaleX(0.68) rotate(40deg);
+}
+.invite-art-dot {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  right: 1px;
+  top: 9px;
+  border-radius: 50%;
+  background: #c9875d;
+}
+.gathering-hero.invitation-card h1 {
+  position: relative;
+  margin: 36px 0 16px;
+  max-width: 100%;
+  font:
+    500 clamp(36px, 4.4vw, 60px)/1.03 Georgia,
+    serif;
+  letter-spacing: -2px;
+  text-wrap: balance;
+  color: #24473a;
+  overflow-wrap: anywhere;
+}
+.gathering-hero.invitation-card .invite-subtitle {
+  margin: 0;
+  color: #5f705f;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.invite-details {
+  padding: 24px 28px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+}
+.invite-detail {
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+  padding: 19px 0;
+  color: var(--ink);
+  text-decoration: none;
+  min-width: 0;
+}
+.invite-detail + .invite-detail {
+  border-top: 1px solid #e8e8dd;
+}
+.invite-detail-icon {
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid #e4e8dc;
+  border-radius: 12px;
+  background: #f7f7ef;
+  color: #68816b;
+}
+.invite-detail-copy {
+  min-width: 0;
+  flex: 1;
+}
+.invite-detail-copy small {
+  display: block;
+  margin: 1px 0 8px;
+  color: #6c776b;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1.6px;
+}
+.invite-detail-copy strong {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.invite-detail-copy > span {
+  display: block;
+  margin-top: 6px;
+  color: #6b7568;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.invite-detail-copy .invite-time {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+.invite-date-arrow {
+  margin-top: 4px;
+  color: #7b8e76;
+}
+.invitation-card .invite-date:focus-visible {
+  outline: 3px solid #477e70;
+  outline-offset: 4px;
+  border-radius: 8px;
+}
+.invite-footer {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 18px;
+  padding: 22px 30px;
+  border-top: 1px dashed #cdd7c5;
+  background: #fffdf8;
+}
+.invite-footer::before,
+.invite-footer::after {
+  content: "";
+  position: absolute;
+  top: -9px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #f7f5ef;
+  border: 1px solid #dce1d5;
+}
+.invite-footer::before {
+  left: -9px;
+}
+.invite-footer::after {
+  right: -9px;
+}
+.invite-attendance {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.invite-people-icon {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #edf1df;
+  color: #5a7242;
+  flex-shrink: 0;
+}
+.invite-attendance strong {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+.invite-attendance small {
+  display: block;
+  color: #6b7668;
+  font-size: 10px;
+  line-height: 1.5;
+  margin-top: 4px;
+}
+.invitation-card .invite-share {
+  background: #264b3e;
+  color: #fffdf8;
+  border: 1px solid #264b3e;
+  border-radius: 12px;
+  padding: 12px 16px;
+  gap: 9px;
+  font-size: 12px;
+  box-shadow: 0 3px 6px #24473a12;
+  transition:
+    background-color 180ms ease,
+    transform 180ms ease;
+}
+@media (hover: hover) {
+  .invite-date:hover strong {
+    text-decoration: underline;
+    text-underline-offset: 4px;
+  }
+  .invitation-card .invite-share:hover {
+    background: #183c30;
+    transform: translateY(-1px);
+  }
+}
+@media (max-width: 1050px) and (min-width: 761px) {
+  .gathering-shell .invite-main {
+    grid-template-columns: 1fr;
+  }
+  .gathering-shell .invite-details {
+    padding: 8px 26px;
+  }
+}
+@media (max-width: 600px) {
+  .gathering-hero.invitation-card {
+    border-radius: 22px;
+    padding: 0;
+  }
+  .invite-main {
+    grid-template-columns: 1fr;
+  }
+  .invite-intro {
+    padding: 28px 24px;
+  }
+  .invite-art {
+    top: 17px;
+    right: 19px;
+    width: 56px;
+    height: 56px;
+  }
+  .gathering-hero.invitation-card h1 {
+    margin: 29px 0 12px;
+    font-size: clamp(36px, 10vw, 46px);
+    letter-spacing: -1.5px;
+  }
+  .invite-details {
+    padding: 7px 24px;
+  }
+  .invite-detail {
+    padding: 17px 0;
+  }
+  .invite-detail-copy strong {
+    font-size: 14px;
+  }
+  .invite-footer {
+    padding: 19px 24px 23px;
+    gap: 18px;
+  }
+  .invitation-card .invite-share {
+    width: 100%;
+    min-height: 47px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .invitation-card .invite-share {
+    transition: none;
+  }
+}

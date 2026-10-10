@@ -8,6 +8,7 @@ import { AuthProvider } from "./auth/AuthContext";
 import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import "./index.css";
 import "./premium.css";
+import "./invitation.css";
 
 const queryClient = new QueryClient({
   defaultOptions: {
