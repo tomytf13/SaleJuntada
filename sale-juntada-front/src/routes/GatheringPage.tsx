@@ -1,3 +1,4 @@
+import { GatheringDatePlace } from "../components/GatheringDatePlace";
 import { PublicInvitation } from "./PublicInvitation";
 import { normalizeContactPhone } from "../utils/phone";
 import { GatheringServiceSettings } from "../components/GatheringServiceSettings";
@@ -1592,36 +1593,10 @@ function GatheringWorkspace() {
                   <div>
                     <span className="section-kicker">JUNTADA ACTIVA</span>
                     <h2>{eventName}</h2>
-                    {activeGathering.finalizedStart ? (
-                      <p className="gathering-date">
-                        {new Intl.DateTimeFormat("es-AR", {
-                          timeZone: activeGathering.timeZone,
-                          dateStyle: "full",
-                          timeStyle: "short",
-                        }).format(new Date(activeGathering.finalizedStart))}
-                      </p>
-                    ) : null}
-                    {activeGathering.finalizedEnd ? <p>Termina: {new Intl.DateTimeFormat("es-AR", { timeZone: activeGathering.timeZone, dateStyle: "full", timeStyle: "short" }).format(new Date(activeGathering.finalizedEnd))}</p> : null}
-                    <p>📍 {location}</p>
-                    {activeGathering?.status === "OPEN" && (
-                      <p>
-                        Marcá todos los horarios en los que podrías sumarte.
-                      </p>
-                    )}
-                    {activeGathering?.locationLatitude != null &&
-                      activeGathering.locationLongitude != null && (
-                        <a
-                          className="map-link"
-                          href={`https://www.openstreetmap.org/?mlat=${activeGathering.locationLatitude}&mlon=${activeGathering.locationLongitude}#map=17/${activeGathering.locationLatitude}/${activeGathering.locationLongitude}`}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          📍 {activeGathering.locationHint ?? "Ver ubicación"} ·
-                          Ver mapa
-                        </a>
-                      )}
                   </div>
                 </div>
+
+                <GatheringDatePlace gathering={activeGathering} />
 
                 {activeGathering?.status === "OPEN" && (
                   <>
