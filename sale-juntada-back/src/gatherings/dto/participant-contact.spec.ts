@@ -13,6 +13,10 @@ for (const Dto of [AddParticipantDto, AuthParticipantDto]) {
       expect(await validate(dto)).toEqual([]);
       expect(dto.contact).toBe("+5493811234567");
     });
+    it("admite números internacionales cortos de países como Niue", async () => {
+      const dto = plainToInstance(Dto, { name: "Sofi", contact: "+6831234" });
+      expect(await validate(dto)).toEqual([]);
+    });
     it.each([
       "3811234567",
       "+0123456789",
