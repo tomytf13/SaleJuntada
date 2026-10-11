@@ -195,14 +195,14 @@ export function AccountDialog({
                       </button>
                       {gathering.participant.isOrganizer ? (
                         <div className="account-history-actions">
-                          <button
+                          {onDuplicateGathering ? <button
                             className="account-duplicate-button"
                             type="button"
                             disabled={deletingGatheringId === gathering.id}
                             onClick={() => onDuplicateGathering?.(gathering)}
                           >
                             Duplicar
-                          </button>
+                          </button> : null}
                           <button
                             className="account-delete-button"
                             type="button"

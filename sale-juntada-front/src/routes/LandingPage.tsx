@@ -1,8 +1,15 @@
+import { AccountDialog } from "../components/AccountDialog";
+import { PwaStatus } from "../components/PwaStatus";
+import { useAuth } from "../auth/useAuth";
+import { useNavigate } from "react-router-dom";
+import { storeParticipantSession } from "../utils/gatheringHelpers";
 import {
   ArrowRight,
   CalendarDays,
   CheckCheck,
   Plus,
+  LogIn,
+  UserRound,
   ShoppingBasket,
   Sparkles,
   Users,
@@ -43,6 +50,9 @@ const steps = [
  */
 export default function LandingPage() {
   const [showCreate, setShowCreate] = useState(false);
+  const [showAccount, setShowAccount] = useState(false);
+  const { user, isLoading } = useAuth();
+  const navigate = useNavigate();
 
   return (
     <main className="app-root landing-page">
@@ -53,6 +63,10 @@ export default function LandingPage() {
           </span>
           <span>Sale Juntada</span>
         </a>
+        <button className="landing-account-button" type="button" onClick={() => setShowAccount(true)}>
+          {user ? <UserRound size={18} aria-hidden="true" /> : <LogIn size={18} aria-hidden="true" />}
+          {isLoading ? "Tu cuenta" : user ? "Mi cuenta" : "Ingresar"}
+        </button>
       </header>
 
       <section className="hero landing-hero">
@@ -81,6 +95,9 @@ export default function LandingPage() {
               onClick={() => setShowCreate(true)}
             >
               Crear una juntada <ArrowRight size={18} aria-hidden="true" />
+            </button>
+            <button className="landing-login-link" type="button" onClick={() => setShowAccount(true)}>
+              {user ? "Ver mis juntadas" : "Ya tengo cuenta · Ingresar"}
             </button>
           </div>
         </m.div>
@@ -178,6 +195,16 @@ export default function LandingPage() {
         <span>Argentina · 2026</span>
       </footer>
 
+      <AccountDialog
+        open={showAccount}
+        onClose={() => setShowAccount(false)}
+        onOpenGathering={item => {
+          storeParticipantSession(item.slug, item.participant.id, item.participant.responseToken);
+          setShowAccount(false);
+          navigate(`/j/${item.slug}`);
+        }}
+      />
+      <PwaStatus />
       <CreateGatheringDialog
         open={showCreate}
         onClose={() => setShowCreate(false)}
