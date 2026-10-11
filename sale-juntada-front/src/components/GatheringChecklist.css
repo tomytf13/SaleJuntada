@@ -1,0 +1,24 @@
+.gathering-checklist .checklist-items { display: grid; gap: 14px; }
+.gathering-checklist .checklist-items > li { padding: 20px; border: 1px solid #ead699; border-radius: 18px; background: #fffae8; }
+.gathering-checklist .checklist-items > li.ready { background: #eff8ed; border-color: #bddab6; }
+.checklist-item-copy > strong { display: flex; gap: 12px; align-items: center; }
+.checklist-item-copy .checklist-object-icon { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 38px; height: 38px; border-radius: 12px; background: #f7e7ac; color: #745710; }
+.ready .checklist-item-copy .checklist-object-icon { color: #2c693a; background: #d5ebcf; }
+.checklist-item-copy .checklist-status { display: flex; align-items: center; gap: 7px; margin-top: 10px; color: #785917; font-size: 13px; }
+.gathering-checklist .checklist-item-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-weight: 600; font-size: 13px; }
+.gathering-checklist .checklist-item-actions .checklist-claim { color: #244b42; background: #e3eee8; border-color: #b6d0c3; }
+.gathering-checklist .checklist-item-actions .checklist-ready { color: #fff; background: #317044; border-color: #317044; }
+.gathering-checklist .checklist-item-actions .checklist-pending { color: #795710; background: #fff0bf; border-color: #d9bc69; }
+.gathering-checklist .checklist-item-actions .checklist-release { color: #975122; background: #fff0e6; border-color: #e8c2a8; }
+.gathering-checklist .checklist-item-actions .checklist-remove { color: #a52b34; background: #ffebec; border-color: #edbfc3; }
+.gathering-checklist .checklist-item-actions select { min-height: 48px; font-size: 13px; }
+.checklist-ideas { margin: 20px 0; padding: 18px; border: 1px solid #dce4d8; border-radius: 18px; background: #f6f8f1; }
+.checklist-ideas-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 16px; }
+.checklist-ideas-heading > span { display: flex; align-items: center; gap: 8px; color: #375748; font-weight: 700; }
+.checklist-ideas-heading label { display: grid; gap: 6px; font-size: 12px; color: #536358; }
+.checklist-ideas-heading select { padding: 10px; border-radius: 10px; background: white; border: 1px solid #cdd8c7; max-width: 100%; min-height: 44px; font: inherit; }
+.checklist-ideas > p { font-size: 13px; margin: 12px 0; color: #5a685b; }
+.gathering-checklist .checklist-suggestions { margin: 12px 0 0; }
+.gathering-checklist .checklist-suggestions button { display: inline-flex; align-items: center; gap: 7px; min-height: 44px; background: #fff; color: #35523f; }
+.checklist-add .primary-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+@media(max-width:600px) { .gathering-checklist .checklist-items > li { padding: 16px; } .checklist-ideas-heading label { width: 100%; } }
