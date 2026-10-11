@@ -51,7 +51,7 @@ describe("App routing", () => {
       await screen.findByRole("button", { name: /crear una juntada/i }),
     ).toBeInTheDocument();
     expect(screen.getByLabelText("Todo lo que podés organizar")).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Ingresar", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: /^Ingresar$/ }));
     expect(await screen.findByRole("button", { name: "Continuar con Google" })).toBeInTheDocument();
     expect(screen.queryByText("Asado con los pibes")).not.toBeInTheDocument();
     expect(screen.queryByText(/GATHERING_PAGE_STUB/)).not.toBeInTheDocument();
