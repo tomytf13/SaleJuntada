@@ -1,8 +1,10 @@
+import { gatheringLocation } from "../utils/gatheringLocation";
 import {
   ArrowUpRight,
   CalendarDays,
   Clock3,
   MapPin,
+  Navigation,
   Share2,
   Sparkles,
   Users,
@@ -18,6 +20,7 @@ export function GatheringHero({
   gathering: Gathering;
   onShare(): void;
 }) {
+  const { directionsUrl } = gatheringLocation(gathering);
   const startsAt = gathering.finalizedStart
     ? new Date(gathering.finalizedStart)
     : null;
@@ -119,6 +122,7 @@ export function GatheringHero({
                   gathering.locationHint ??
                   "Lugar a definir"}
               </strong>
+              {directionsUrl ? <a className="invite-directions" href={directionsUrl} target="_blank" rel="noreferrer"><Navigation size={16} aria-hidden="true" />Cómo llegar<ArrowUpRight size={15} aria-hidden="true" /></a> : null}
             </div>
           </div>
         </div>

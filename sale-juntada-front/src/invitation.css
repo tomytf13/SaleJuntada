@@ -305,3 +305,21 @@
     transition: none;
   }
 }
+
+.invite-detail-copy .invite-directions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: flex-start;
+  gap: 8px;
+  min-height: 44px;
+  margin-top: 12px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: #214d42;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+}
+.invite-directions:focus-visible { outline: 3px solid #809f32; outline-offset: 4px; }

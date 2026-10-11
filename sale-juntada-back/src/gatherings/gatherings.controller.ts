@@ -1,3 +1,4 @@
+import { UpdateAvatarDto } from "./dto/update-avatar.dto";
 import { GatheringAccountGuard } from "./gathering-account.guard";
 import { GatheringServiceKey } from "@prisma/client";
 import { SetGatheringServiceDto } from "./dto/set-gathering-service.dto";
@@ -326,6 +327,18 @@ export class GatheringsController {
     );
     this.gatheringsGateway.gatheringChanged(gatheringId, "cancelled");
     return gathering;
+  }
+
+  @Put(":gatheringId/participants/:participantId/avatar")
+  async updateAvatar(
+    @Param("gatheringId") gatheringId: string,
+    @Param("participantId") participantId: string,
+    @Headers("x-participant-token") participantToken: string | undefined,
+    @Body() dto: UpdateAvatarDto,
+  ) {
+    const participant = await this.gatheringsService.updateAvatar(gatheringId, participantId, participantToken, dto);
+    this.gatheringsGateway.participantsChanged(gatheringId);
+    return participant;
   }
 
   @Put(":gatheringId/participants/:participantId/dietary-profile")

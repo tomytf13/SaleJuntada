@@ -1,3 +1,7 @@
+import { Check, CircleCheck, Clock3, Plus, RotateCcw, Trash2, UserMinus, UserPlus, Sparkles } from "lucide-react";
+import { ChecklistItemIcon } from "./ChecklistItemIcon";
+import { checklistTemplates, detectChecklistTemplate, missingChecklistSuggestions, type ChecklistTemplate } from "../utils/checklistSuggestions";
+import "./GatheringChecklist.css";
 import { useGatheringDraft } from "../hooks/useGatheringDraft";
 import { type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -9,13 +13,6 @@ import {
 } from "../services/gatheringService";
 import { checklistKey } from "../hooks/queryKeys";
 
-const suggestions = [
-  "Carbón",
-  "Sal",
-  "Herramientas para el asado",
-  "Diario para limpiar la parrilla",
-  "Parlante",
-];
 type Operation =
   | { action: "add"; label: string }
   | { action: "remove"; itemId: string }
@@ -33,6 +30,8 @@ export function GatheringChecklist({
   readOnly?: boolean;
 }) {
   const [label, setLabel] = useGatheringDraft("checklist-label", "");
+  const [templateChoice, setTemplateChoice] = useGatheringDraft<ChecklistTemplate | "auto">("checklist-template", "auto");
+  const template = templateChoice === "auto" ? detectChecklistTemplate(gathering.title) : templateChoice;
   const client = useQueryClient();
   const key = checklistKey(gathering.id, token);
   const query = useQuery({
@@ -121,35 +120,22 @@ export function GatheringChecklist({
                 className="primary-button"
                 disabled={disabled || query.isPending || Boolean(query.error)}
               >
-                Agregar
+                <Plus size={16} aria-hidden="true" />Agregar
               </button>
             </div>
           </form>
-          <div
-            className="checklist-suggestions"
-            aria-label="Ideas para el asado"
-          >
-            {suggestions
-              .filter(
-                (suggestion) =>
-                  !items.some(
-                    (item) =>
-                      item.label.toLocaleLowerCase() ===
-                      suggestion.toLocaleLowerCase(),
-                  ),
-              )
-              .map((suggestion) => (
-                <button
-                  type="button"
-                  key={suggestion}
-                  disabled={disabled || query.isPending || Boolean(query.error)}
-                  onClick={() =>
-                    mutation.mutate({ action: "add", label: suggestion })
-                  }
-                >
-                  + {suggestion}
-                </button>
-              ))}
+          <div className="checklist-ideas">
+            <div className="checklist-ideas-heading"><span><Sparkles size={18} aria-hidden="true" />Ideas para tu juntada</span>
+              <label htmlFor="checklist-template">Tipo de juntada<select id="checklist-template" aria-label="Tipo de juntada" value={templateChoice} onChange={event => setTemplateChoice(event.target.value as ChecklistTemplate | "auto")}>
+                <option value="auto">Automático · {checklistTemplates[detectChecklistTemplate(gathering.title)].name}</option>
+                {Object.entries(checklistTemplates).map(([value, config]) => <option key={value} value={value}>{config.name}</option>)}
+              </select></label>
+            </div>
+            <p>Recomendaciones para {checklistTemplates[template].name.toLowerCase()}. Tocá una para agregarla.</p>
+            <div className="checklist-suggestions" aria-label={`Ideas para ${checklistTemplates[template].name}`}>
+              {missingChecklistSuggestions(template, items.map(item => item.label)).map(suggestion => <button type="button" key={suggestion} disabled={disabled || query.isPending || Boolean(query.error)} onClick={() => mutation.mutate({action: "add", label: suggestion})}><ChecklistItemIcon label={suggestion} size={16} />{suggestion}<Plus size={14} aria-hidden="true" /></button>)}
+              {!query.isPending && !query.error && missingChecklistSuggestions(template, items.map(item => item.label)).length === 0 ? <p>Ya agregaron todas las ideas de esta lista. Podés sumar otras necesidades arriba.</p> : null}
+            </div>
           </div>
         </>
       ) : null}
@@ -181,32 +167,35 @@ export function GatheringChecklist({
             <li
               key={item.id}
               className={
-                item.isReady && item.assignedParticipantId ? "ready" : ""
+                item.isReady && item.assignedParticipantId ? "ready" : "pending"
               }
             >
               <div className="checklist-item-copy">
-                <strong>{item.label}</strong>
-                <span>
+                <strong><span className="checklist-object-icon"><ChecklistItemIcon label={item.label} /></span>{item.label}</strong>
+                <span className="checklist-status">
+                  {item.isReady && item.assignedParticipantId ? <CircleCheck size={15} aria-hidden="true" /> : <Clock3 size={15} aria-hidden="true" />}
                   {item.assignee
                     ? `${item.assignee.name}${mine ? " (vos)" : ""} · ${item.isReady ? "Listo ✓" : "Pendiente"}`
-                    : "Sin responsable"}
+                    : "Pendiente · Sin responsable"}
                 </span>
               </div>
               <div className="checklist-item-actions">
                 {!item.assignedParticipantId ? (
                   <button
                     type="button"
+                    className="checklist-claim"
                     disabled={disabled}
                     onClick={() =>
                       mutation.mutate({ action: "claim", itemId: item.id })
                     }
                   >
-                    Me encargo
+                    <UserPlus size={16} aria-hidden="true" />Me encargo
                   </button>
                 ) : canManage ? (
                   <>
                     <button
                       type="button"
+                      className={item.isReady ? "checklist-pending" : "checklist-ready"}
                       disabled={disabled}
                       onClick={() =>
                         mutation.mutate({
@@ -215,16 +204,17 @@ export function GatheringChecklist({
                         })
                       }
                     >
-                      {item.isReady ? "Volver a pendiente" : "Ya está listo"}
+                      {item.isReady ? <RotateCcw size={16} aria-hidden="true" /> : <Check size={16} aria-hidden="true" />}{item.isReady ? "Volver a pendiente" : "Ya está listo"}
                     </button>
                     <button
                       type="button"
+                      className="checklist-release"
                       disabled={disabled}
                       onClick={() =>
                         mutation.mutate({ action: "release", itemId: item.id })
                       }
                     >
-                      Liberar
+                      <UserMinus size={16} aria-hidden="true" />Liberar
                     </button>
                   </>
                 ) : null}
@@ -255,13 +245,14 @@ export function GatheringChecklist({
                     </select>
                     <button
                       type="button"
+                      className="checklist-remove"
                       aria-label={`Quitar ${item.label}`}
                       disabled={disabled}
                       onClick={() =>
                         mutation.mutate({ action: "remove", itemId: item.id })
                       }
                     >
-                      Quitar
+                      <Trash2 size={16} aria-hidden="true" />Quitar
                     </button>
                   </>
                 ) : null}
