@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, useParams } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
@@ -16,6 +16,8 @@ const auth = vi.hoisted(() => ({
     signOut: vi.fn(),
   },
 }));
+
+vi.mock("./components/PwaStatus", () => ({ PwaStatus: () => null }));
 
 vi.mock("./auth/useAuth", () => ({ useAuth: () => auth.value }));
 
@@ -48,6 +50,9 @@ describe("App routing", () => {
     expect(
       await screen.findByRole("button", { name: /crear una juntada/i }),
     ).toBeInTheDocument();
+    expect(screen.getByLabelText("Todo lo que podés organizar")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /^Ingresar$/ }));
+    expect(await screen.findByRole("button", { name: "Continuar con Google" })).toBeInTheDocument();
     expect(screen.queryByText("Asado con los pibes")).not.toBeInTheDocument();
     expect(screen.queryByText(/GATHERING_PAGE_STUB/)).not.toBeInTheDocument();
   });

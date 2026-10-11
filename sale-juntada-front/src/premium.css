@@ -559,3 +559,9 @@ button:disabled {
     scroll-behavior: auto !important;
   }
 }
+
+.landing-account-button { display: inline-flex; gap: 8px; align-items: center; justify-content: center; min-height: 44px; padding: 10px 18px; border: 1px solid #214d42; border-radius: 12px; color: #fff; background: #214d42; font: inherit; font-weight: 700; cursor: pointer; }
+.landing-login-link { min-height: 44px; border: 0; background: transparent; color: #214d42; font: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 4px; cursor: pointer; }
+.landing-page .hero-actions { flex-wrap: wrap; gap: 14px 20px; }
+.landing-account-button:focus-visible, .landing-login-link:focus-visible { outline: 3px solid #809f32; outline-offset: 4px; }
+@media(max-width: 480px) { .landing-account-button { padding: 10px 12px; font-size: 13px; } .landing-page .topbar { gap: 12px; } }
