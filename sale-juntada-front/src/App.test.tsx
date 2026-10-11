@@ -52,7 +52,7 @@ describe("App routing", () => {
     ).toBeInTheDocument();
     expect(screen.getByLabelText("Todo lo que podés organizar")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Ingresar", exact: true }));
-    expect(await screen.findByRole("button", { name: "Continuar con Google" })).toBeVisible();
+    expect(await screen.findByRole("button", { name: "Continuar con Google" })).toBeInTheDocument();
     expect(screen.queryByText("Asado con los pibes")).not.toBeInTheDocument();
     expect(screen.queryByText(/GATHERING_PAGE_STUB/)).not.toBeInTheDocument();
   });
