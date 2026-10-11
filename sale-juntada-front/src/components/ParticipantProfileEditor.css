@@ -9,3 +9,9 @@
 .participant-profile-editor button:focus-visible { outline: 3px solid #809f32; outline-offset: 3px; }
 .profile-avatar-saved { display: flex; gap: 7px; align-items: center; color: #335d31; margin: 12px 0; }
 @media(max-width:600px) { .participant-profile-editor { padding: 18px; } }
+
+.instagram-editor h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 18px; font-size: 19px; font-weight: 700; }
+.instagram-editor label { display: block; font-weight: 600; margin-bottom: 8px; }
+.instagram-editor input { display: block; width: 100%; padding: 14px 16px; border: 1px solid #cbd6cb; border-radius: 12px; background: white; color: #192d28; font: inherit; }
+.instagram-editor input:focus-visible { outline: 3px solid #809f32; outline-offset: 2px; }
+.instagram-editor p { margin: 10px 0 18px; font-size: 14px; color: #52695f; }

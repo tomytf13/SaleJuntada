@@ -1,3 +1,4 @@
+import { ParticipantInstagramEditor } from "../components/ParticipantInstagramEditor";
 import { ParticipantProfileEditor } from "../components/ParticipantProfileEditor";
 import { GatheringDatePlace } from "../components/GatheringDatePlace";
 import { PublicInvitation } from "./PublicInvitation";
@@ -1228,6 +1229,7 @@ function GatheringWorkspace() {
     (participant) => participant.id === participantSession?.participantId,
   );
   const profileEditor = currentParticipant && participantSession && activeGathering ? (
+    <>
     <ParticipantProfileEditor
       key={`${currentParticipant.id}:${currentParticipant.avatarUrl}`}
       gatheringId={activeGathering.id}
@@ -1239,6 +1241,11 @@ function GatheringWorkspace() {
         setActiveGathering(current => current ? { ...current, participants: current.participants.map(person => person.id === currentParticipant.id ? { ...person, avatarUrl } : person) } : current);
       }}
     />
+    <ParticipantInstagramEditor key={`${currentParticipant.id}:${currentParticipant.instagramUsername}`} gatheringId={activeGathering.id} participant={currentParticipant} token={participantSession.responseToken} onSaved={(instagramUsername) => {
+      setActiveGathering(current => current ? { ...current, participants: current.participants.map(person => person.id === currentParticipant.id ? { ...person, instagramUsername } : person) } : current);
+      showNotice("Tu Instagram quedó actualizado.");
+    }} />
+    </>
   ) : null;
 
   const currentParticipantExpensesReady =
@@ -1556,6 +1563,8 @@ function GatheringWorkspace() {
               <AttendanceSummary
                 gathering={activeGathering}
                 viewerId={currentParticipant.id}
+                token={participantSession?.responseToken}
+                onBirthdayUpdated={(id, isBirthdayPerson) => setActiveGathering(current => current ? { ...current, participants: current.participants.map(person => person.id === id ? { ...person, isBirthdayPerson } : person) } : current)}
               />
             ) : null}
 

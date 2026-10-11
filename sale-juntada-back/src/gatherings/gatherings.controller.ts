@@ -1,3 +1,5 @@
+import { UpdateInstagramDto } from "./dto/update-instagram.dto";
+import { UpdateBirthdayDto } from "./dto/update-birthday.dto";
 import { UpdateAvatarDto } from "./dto/update-avatar.dto";
 import { GatheringAccountGuard } from "./gathering-account.guard";
 import { GatheringServiceKey } from "@prisma/client";
@@ -327,6 +329,30 @@ export class GatheringsController {
     );
     this.gatheringsGateway.gatheringChanged(gatheringId, "cancelled");
     return gathering;
+  }
+
+  @Put(":gatheringId/participants/:participantId/instagram")
+  async updateInstagram(
+    @Param("gatheringId") gatheringId: string,
+    @Param("participantId") participantId: string,
+    @Headers("x-participant-token") token: string | undefined,
+    @Body() dto: UpdateInstagramDto,
+  ) {
+    const result = await this.gatheringsService.updateInstagram(gatheringId, participantId, token, dto);
+    this.gatheringsGateway.participantsChanged(gatheringId);
+    return result;
+  }
+
+  @Put(":gatheringId/participants/:participantId/birthday")
+  async updateBirthday(
+    @Param("gatheringId") gatheringId: string,
+    @Param("participantId") participantId: string,
+    @Headers("x-participant-token") token: string | undefined,
+    @Body() dto: UpdateBirthdayDto,
+  ) {
+    const result = await this.gatheringsService.updateBirthday(gatheringId, participantId, token, dto);
+    this.gatheringsGateway.participantsChanged(gatheringId);
+    return result;
   }
 
   @Put(":gatheringId/participants/:participantId/avatar")
