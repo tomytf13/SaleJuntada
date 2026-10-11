@@ -85,6 +85,8 @@ model Participant {
   name                  String
   contact               String?
   avatarUrl             String?
+  isBirthdayPerson      Boolean                @default(false)
+  instagramUsername     String?
   authUserId            String?
   dietaryPreferences    String[]               @default([])
   mealArrangement       String?

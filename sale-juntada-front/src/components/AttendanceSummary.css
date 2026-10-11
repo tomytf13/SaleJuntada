@@ -1,0 +1,11 @@
+.birthday-help { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.attendance-list li.birthday-guest { background: #fff3da; border: 1px solid #e8cc89; border-radius: 18px; padding: 16px 12px; margin: 8px 0; }
+.attendance-list .birthday-badge { display: flex; align-items: center; gap: 5px; color: #78521c; font-weight: 700; }
+.guest-instagram { display: flex; align-items: center; gap: 5px; color: #76415b; font-size: 13px; margin-top: 7px; text-decoration: underline; text-underline-offset: 3px; }
+.birthday-toggle { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper, #fff); color: var(--ink); font: inherit; font-size: 12px; cursor: pointer; }
+.birthday-toggle[aria-pressed="true"] { background: #fae5b3; border-color: #b18a40; color: #62400f; }
+.birthday-toggle:disabled { opacity: .6; cursor: wait; }
+@media (max-width: 600px) {
+  .attendance-list li { flex-wrap: wrap; }
+  .birthday-toggle { margin-left: 48px; }
+}

@@ -31,6 +31,8 @@ const storedGathering = {
     {
       id: "host",
       name: "Tomy",
+      isBirthdayPerson: true,
+      instagramUsername: "tomy.private",
       avatarUrl: "emoji:🦆",
       isOrganizer: true,
       dietaryPreferences: ["CELIAC"],
@@ -100,6 +102,7 @@ describe("getBySlug vista pública", () => {
     // Vacío, no reducido: un link reenviado no debe revelar quiénes van.
     expect(result.participants).toEqual([]);
     expect(result.participantCount).toBe(2);
+    expect(JSON.stringify(result)).not.toContain("tomy.private");
   });
 
   it("no filtra los nombres de las personas del grupo", async () => {

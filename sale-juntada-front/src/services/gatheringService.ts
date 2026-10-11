@@ -125,6 +125,8 @@ export type Gathering = {
 };
 
 export type Participant = {
+  isBirthdayPerson?: boolean;
+  instagramUsername?: string | null;
   id: string;
   name: string;
   avatarUrl?: string | null;
@@ -622,6 +624,20 @@ export const gatheringService = {
         method: "DELETE",
         headers: { "x-participant-token": participantToken },
       },
+    );
+  },
+
+  updateInstagram(gatheringId: string, participantId: string, token: string, instagramUsername: string) {
+    return request<{ id: string; instagramUsername: string | null }>(
+      `/gatherings/${gatheringId}/participants/${participantId}/instagram`,
+      { method: "PUT", headers: { "x-participant-token": token }, body: JSON.stringify({ instagramUsername }) },
+    );
+  },
+
+  updateBirthday(gatheringId: string, participantId: string, token: string, targetParticipantId: string, isBirthdayPerson: boolean) {
+    return request<{ id: string; isBirthdayPerson: boolean }>(
+      `/gatherings/${gatheringId}/participants/${participantId}/birthday`,
+      { method: "PUT", headers: { "x-participant-token": token }, body: JSON.stringify({ targetParticipantId, isBirthdayPerson }) },
     );
   },
 

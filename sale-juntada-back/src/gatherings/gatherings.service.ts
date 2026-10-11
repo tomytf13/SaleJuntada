@@ -1,3 +1,5 @@
+import { UpdateInstagramDto } from "./dto/update-instagram.dto";
+import { UpdateBirthdayDto } from "./dto/update-birthday.dto";
 import { UpdateAvatarDto } from "./dto/update-avatar.dto";
 import {
   lockGatheringServices,
@@ -501,6 +503,8 @@ export class GatheringsService {
             id: true,
             name: true,
             avatarUrl: true,
+            isBirthdayPerson: true,
+            instagramUsername: true,
             isOrganizer: true,
             dietaryPreferences: true,
             mealArrangement: true,
@@ -1055,6 +1059,24 @@ export class GatheringsService {
       })
       .sort((a, b) => b.score - a.score)
       .slice(0, 5);
+  }
+
+  async updateInstagram(gatheringId: string, participantId: string, token: string | undefined, dto: UpdateInstagramDto) {
+    await this.participantAuth.requireParticipant(gatheringId, participantId, token);
+    return this.prisma.participant.update({
+      where: { id: participantId }, data: { instagramUsername: dto.instagramUsername || null },
+      select: { id: true, instagramUsername: true },
+    });
+  }
+
+  async updateBirthday(gatheringId: string, participantId: string, token: string | undefined, dto: UpdateBirthdayDto) {
+    await this.participantAuth.requireOrganizer(gatheringId, participantId, token);
+    const result = await this.prisma.participant.updateMany({
+      where: { id: dto.targetParticipantId, gatheringId },
+      data: { isBirthdayPerson: dto.isBirthdayPerson },
+    });
+    if (result.count !== 1) throw new NotFoundException("Invitado no encontrado en esta juntada");
+    return { id: dto.targetParticipantId, isBirthdayPerson: dto.isBirthdayPerson };
   }
 
   async updateAvatar(gatheringId: string, participantId: string, participantToken: string | undefined, dto: UpdateAvatarDto) {
