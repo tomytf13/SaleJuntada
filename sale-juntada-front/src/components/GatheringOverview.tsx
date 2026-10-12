@@ -1,3 +1,4 @@
+import { OrganizerSummary } from "./OrganizerSummary";
 import { Link } from "react-router-dom";
 import { ArrowUpRight, ClipboardCheck } from "lucide-react";
 import type {
@@ -19,6 +20,7 @@ type Props = {
   checklist?: ChecklistItem[];
   checklistError: boolean;
   settlement: ExpenseSettlement | null;
+  settlementError?: boolean;
 };
 
 export function GatheringServices({
@@ -44,7 +46,7 @@ export function GatheringServices({
     pendientes: checklistError
       ? "No pudimos cargar el resumen"
       : checklist
-        ? `${checklist.filter((item) => !item.assignedParticipantId).length} sin responsable · ${checklist.filter((item) => item.isReady).length} resueltas`
+        ? `${checklist.filter((item) => !item.isReady && !item.assignedParticipantId).length} sin responsable · ${checklist.filter((item) => item.isReady).length} resueltas`
         : "Cargando pendientes…",
     alimentacion: `${gathering.participants.filter((p) => p.dietaryPreferences?.length).length} personas con necesidades alimentarias`,
     cuentas: settlement
@@ -210,6 +212,7 @@ export function GatheringHome(props: Props) {
     : 0;
   return (
     <>
+      <OrganizerSummary {...props} />
       <Link className="gathering-my-part" to={`/j/${gathering.slug}/mi-parte`}>
         <span className="personal-shortcut-copy">
           <span className="personal-shortcut-icon" aria-hidden="true">

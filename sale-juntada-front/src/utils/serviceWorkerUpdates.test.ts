@@ -1,0 +1,33 @@
+import { afterEach, expect, it, vi } from "vitest";
+import { watchServiceWorkerUpdates } from "./serviceWorkerUpdates";
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
+it("checks on resume and periodically without reloading, and cleans up", async () => {
+  vi.useFakeTimers();
+  vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
+  vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+  const update = vi.fn().mockResolvedValue(undefined);
+  const stop = watchServiceWorkerUpdates({ update });
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(update).toHaveBeenCalledTimes(2);
+  document.dispatchEvent(new Event("visibilitychange"));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(update).toHaveBeenCalledTimes(3);
+  stop();
+  await vi.advanceTimersByTimeAsync(60_000);
+  window.dispatchEvent(new Event("online"));
+  expect(update).toHaveBeenCalledTimes(3);
+});
+it("skips offline and hidden checks, then recovers from a failed request", async () => {
+  vi.useFakeTimers();
+  const online = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+  const visible = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+  const update = vi.fn().mockRejectedValueOnce(new Error("offline")).mockResolvedValue(undefined);
+  const stop = watchServiceWorkerUpdates({ update });
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(update).not.toHaveBeenCalled();
+  online.mockReturnValue(true); visible.mockReturnValue("visible");
+  window.dispatchEvent(new Event("online"));
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(update).toHaveBeenCalledTimes(2);
+  stop();
+});

@@ -1,3 +1,4 @@
+import { watchServiceWorkerUpdates } from "../utils/serviceWorkerUpdates";
 import { useEffect, useState } from "react";
 import { useRegisterSW } from "virtual:pwa-register/react";
 
@@ -21,6 +22,7 @@ function isStandalone() {
 }
 
 export function PwaStatus() {
+  const [registration, setRegistration] = useState<ServiceWorkerRegistration | undefined>();
   const [installPrompt, setInstallPrompt] =
     useState<InstallPromptEvent | null>(null);
   const [online, setOnline] = useState(() => navigator.onLine);
@@ -32,7 +34,14 @@ export function PwaStatus() {
     offlineReady: [offlineReady, setOfflineReady],
     needRefresh: [needRefresh, setNeedRefresh],
     updateServiceWorker,
-  } = useRegisterSW();
+  } = useRegisterSW({
+    onRegisteredSW(_url, nextRegistration) { setRegistration(nextRegistration); },
+  });
+
+  useEffect(() => {
+    if (!registration) return;
+    return watchServiceWorkerUpdates(registration);
+  }, [registration]);
 
   useEffect(() => {
     const handleInstallPrompt = (event: Event) => {
