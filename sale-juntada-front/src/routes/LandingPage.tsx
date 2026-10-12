@@ -85,8 +85,8 @@ export default function LandingPage() {
             <em>a "quedó todo pago".</em>
           </h1>
           <p>
-            Organizá la juntada donde ya la estás organizando: el grupo. Sin
-            perderte entre mensajes.
+            Organizá la juntada completa: quién viene, qué falta y cómo quedan
+            las cuentas. Un solo link para tu grupo.
           </p>
           <div className="hero-actions">
             <button

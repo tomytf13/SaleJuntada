@@ -546,8 +546,12 @@ function GatheringWorkspace() {
               sessionResponseToken,
             )
           : Promise.resolve(null),
-      ]);
+      ]).catch((error: unknown) => {
+        setExpensesLoadError(true);
+        throw error;
+      });
       setExpenseSettlement(settlement);
+      setExpensesLoadError(false);
       if (details) setPaymentDetails(details);
       if (
         payload?.participantName &&
@@ -1387,6 +1391,7 @@ function GatheringWorkspace() {
         checklist: checklistQuery.data,
         checklistError: Boolean(checklistQuery.error),
         settlement: expenseSettlement,
+        settlementError: expensesLoadError,
       }
     : null;
   const moduleTitle = gatheringModuleTitle(view);
