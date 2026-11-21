@@ -27,10 +27,6 @@ button:disabled {
 .app-root .topbar {
   border-bottom: 1px solid #182b280d;
 }
-.brand-mark {
-  background: linear-gradient(145deg, #e6fa84, var(--lime));
-  box-shadow: 0 3px 9px #182b2818;
-}
 .topbar .text-link {
   min-height: 44px;
   padding: 10px 18px;

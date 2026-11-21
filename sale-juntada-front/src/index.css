@@ -64,13 +64,7 @@ button {
 .brand-mark {
   width: 37px;
   height: 37px;
-  border-radius: 12px;
-  background: var(--lime);
-  display: grid;
-  place-items: center;
-  font-size: 19px;
-  transform: rotate(-4deg);
-  box-shadow: 0 2px 0 var(--ink);
+  flex-shrink: 0;
 }
 
 .header-actions {

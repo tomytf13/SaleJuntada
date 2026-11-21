@@ -5,7 +5,6 @@ import { useGathering } from "../hooks/useGathering";
 import { GatheringHero } from "../components/GatheringHero";
 import { AccountDialog } from "../components/AccountDialog";
 import { PwaStatus } from "../components/PwaStatus";
-import { SparkIcon } from "../components/SparkIcon";
 import { ApiError } from "../services/gatheringService";
 import { NotFoundGathering } from "./NotFoundGathering";
 import { GatheringSkeleton } from "./GatheringSkeleton";
@@ -42,9 +41,7 @@ export function PublicInvitation() {
     <main className="app-root gathering-app">
       <header className="topbar">
         <Link className="brand" to="/" aria-label="Sale Juntada, inicio">
-          <span className="brand-mark">
-            <SparkIcon />
-          </span>
+          <img className="brand-mark" src="/favicon.svg" alt="" width="37" height="37" />
           Sale Juntada
         </Link>
         <button className="text-link" onClick={() => setLoginOpen(true)}>

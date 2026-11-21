@@ -10,9 +10,7 @@ export function NotFoundGathering() {
     <main className="app-root not-found-page">
       <header className="topbar">
         <a className="brand" href="/" aria-label="Sale Juntada, inicio">
-          <span className="brand-mark">
-            <SparkIcon />
-          </span>
+          <img className="brand-mark" src="/favicon.svg" alt="" width="37" height="37" />
           <span>Sale Juntada</span>
         </a>
       </header>
