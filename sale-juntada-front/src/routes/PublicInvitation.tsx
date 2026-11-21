@@ -1,4 +1,4 @@
-import { ArrowRight, LogIn, ShieldCheck } from "lucide-react";
+import { ArrowRight, LogIn } from "lucide-react";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useGathering } from "../hooks/useGathering";
@@ -55,28 +55,22 @@ export function PublicInvitation() {
         gathering={{ ...gathering, isParticipant: false, participants: [] }}
         onShare={() => void share()}
       />
-      <section className="join-gathering invitation-entry">
+      {gathering.status !== "CANCELLED" && <section className="join-gathering invitation-entry">
         <span className="invitation-entry-icon" aria-hidden="true">
           <LogIn size={24} />
         </span>
         <div className="invitation-entry-copy">
-          <span className="section-kicker">EL PLAN EMPIEZA ACÁ</span>
-          <h2>Ingresá para sumarte</h2>
-          <p>
-            Necesitás una cuenta para aceptar la invitación, confirmar tu
-            asistencia y participar de la juntada.
-          </p>
+          <h2>{gathering.status === "CONFIRMED" ? "¿Venís?" : "¿Cuándo podés?"}</h2>
+          <p>{gathering.status === "CONFIRMED"
+            ? "Ingresá con Google para avisarle al grupo si vas."
+            : "Ingresá con Google para marcar los horarios que te quedan bien."}</p>
           <button className="primary-button" onClick={() => setLoginOpen(true)}>
-            Ingresar para aceptar la invitación
+            {gathering.status === "CONFIRMED" ? "Ingresar para responder" : "Ingresar para elegir horarios"}
             <ArrowRight size={18} aria-hidden="true" />
           </button>
-          <p className="invitation-trust">
-            <ShieldCheck size={15} aria-hidden="true" />
-            Tu respuesta queda vinculada a tu cuenta.
-          </p>
-          {shareMessage ? <p role="status">{shareMessage}</p> : null}
         </div>
-      </section>
+      </section>}
+      {shareMessage ? <p role="status">{shareMessage}</p> : null}
       <AccountDialog open={loginOpen} onClose={() => setLoginOpen(false)} />
       <PwaStatus />
     </main>

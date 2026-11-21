@@ -1,3 +1,4 @@
+import { FootballCrests } from "./FootballCrests";
 import { gatheringLocation } from "../utils/gatheringLocation";
 import {
   ArrowUpRight,
@@ -93,12 +94,9 @@ export function GatheringHero({
             <Sparkles size={42} strokeWidth={1.25} />
             <span className="invite-art-dot" />
           </div>
+          <FootballCrests title={gathering.title} />
           <h1 id="gathering-title">{gathering.title}</h1>
-          <p className="invite-subtitle">
-            {gathering.status === "CANCELLED"
-              ? "Este encuentro fue cancelado."
-              : "Lo mejor del plan: encontrarnos."}
-          </p>
+
         </div>
         <div className="invite-details">
           {gathering.isParticipant ? (

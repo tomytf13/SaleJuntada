@@ -1,3 +1,4 @@
+import { FootballCrests } from "./FootballCrests";
 import { AccountDialog } from "./AccountDialog";
 import { FormEvent, Suspense, lazy, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -227,7 +228,7 @@ export function CreateGatheringDialog({
       <p>
         {templateGatheringId
           ? "Copiamos el lugar, la configuración y las cantidades. Los invitados, responsables y gastos empiezan de cero."
-          : "Con lo básico alcanza. Después el grupo completa el resto."}
+          : "Elegí un único horario si ya está decidido, o proponé varios para que el grupo elija."}
       </p>
       <label>
         Nombre de la juntada
@@ -239,6 +240,7 @@ export function CreateGatheringDialog({
           required
         />
       </label>
+      <FootballCrests title={createTitle} />
       <label>
         Tu nombre
         <input
@@ -322,8 +324,8 @@ export function CreateGatheringDialog({
       <section className="schedule-builder">
         <div className="schedule-heading">
           <div>
-            <strong>¿Qué días buscamos?</strong>
-            <small>Elegí el período que querés consultar.</small>
+            <strong>¿Qué día o días tenés en mente?</strong>
+            <small>Para un solo día, elegí la misma fecha en ambos campos.</small>
           </div>
           <span>1</span>
         </div>
@@ -430,13 +432,16 @@ export function CreateGatheringDialog({
         <span aria-hidden="true">✨</span>
         <div>
           <strong>
-            {createSchedulePreview.totalOptions > 0
+            {createSchedulePreview.totalOptions === 1
+              ? "Fecha y horario definidos"
+              : createSchedulePreview.totalOptions > 0
               ? `${createSchedulePreview.totalOptions} horarios posibles`
               : "La franja es demasiado corta"}
           </strong>
           <small>
-            {createSchedulePreview.dayCount} días · opciones cada 1 hora ·
-            duración de {createDuration / 60} h
+            {createSchedulePreview.totalOptions === 1
+              ? "Tus invitados van a poder confirmar si van."
+              : `Opciones cada 1 hora · duración de ${createDuration / 60} h`}
           </small>
         </div>
       </div>
@@ -456,11 +461,13 @@ export function CreateGatheringDialog({
           ? "Creando…"
           : templateGatheringId
             ? "Crear copia y revisar"
-            : "Crear y elegir horarios"}{" "}
+            : createSchedulePreview.totalOptions === 1
+              ? "Crear con fecha confirmada"
+              : "Crear encuesta de horarios"}{" "}
         <span>→</span>
       </button>
       <small className="privacy-note">
-        Nadie necesita registrarse para responder.
+        Tus invitados podrán ver el plan desde el enlace. Para responder, ingresan con Google.
       </small>
     </AnimatedDialog>
   );

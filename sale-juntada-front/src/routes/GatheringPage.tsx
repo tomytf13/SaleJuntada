@@ -1527,7 +1527,7 @@ function GatheringWorkspace() {
             disabled={moduleReadOnly}
           >
             {currentParticipant &&
-            (view === "invitados" ||
+            (view === "invitados" || view === "fecha" ||
               (!view && !currentParticipant.rsvpStatus)) &&
             activeGathering.status === "CONFIRMED" &&
             activeGathering.finalizedStart ? (
@@ -1639,7 +1639,7 @@ function GatheringWorkspace() {
                         <div className="card-title-row">
                           <div>
                             <h3>¿Cuándo podés?</h3>
-                            <p>Cada opción muestra inicio y fin. Podés elegir más de una.</p>
+                            <p>Marcá todos los horarios en los que podrías ir.</p>
                           </div>
                           <AnimatePresence mode="wait" initial={false}>
                             <m.span
@@ -1650,7 +1650,7 @@ function GatheringWorkspace() {
                               exit={{ opacity: 0, y: 5, scale: 0.94 }}
                               transition={quickTransition}
                             >
-                              {yourSlots.length} elegidos
+                              {yourSlots.length} {yourSlots.length === 1 ? "elegido" : "elegidos"}
                             </m.span>
                           </AnimatePresence>
                         </div>
@@ -1757,11 +1757,11 @@ function GatheringWorkspace() {
                         <div className="card-title-row">
                           <div>
                             <h3>El grupo</h3>
-                            <p>{participantTotal} personas</p>
+                            <p>{participantTotal} {participantTotal === 1 ? "persona" : "personas"}</p>
                           </div>
                           <span className="response-pill">
                             {respondingParticipants}/{participantTotal}{" "}
-                            respondieron
+                            {respondingParticipants === 1 ? "respondió" : "respondieron"}
                           </span>
                         </div>
                         <m.div

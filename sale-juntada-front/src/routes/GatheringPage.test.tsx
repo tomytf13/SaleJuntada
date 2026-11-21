@@ -132,7 +132,7 @@ describe("GatheringPage", () => {
     saveSession();
     service.getBySlug.mockResolvedValue({ ...privateGathering, participants: [], isParticipant: false });
     renderGatheringPage("asado-hoy", "invitados");
-    await userEvent.click(await screen.findByRole("button", { name: "Ingresar para aceptar la invitación" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Ingresar para responder" }));
     expect(screen.getByRole("button", { name: /Google/ })).toBeEnabled();
     expect(service.getBySlug).toHaveBeenCalledWith("asado-hoy", undefined);
     expect(service.linkAuthenticatedParticipant).not.toHaveBeenCalled();

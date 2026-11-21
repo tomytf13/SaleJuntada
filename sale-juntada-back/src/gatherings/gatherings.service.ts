@@ -299,6 +299,11 @@ export class GatheringsService {
       dailyEndMinutes,
     });
 
+    const onlySlot = schedule.startsAt ? null : this.onlySlot({
+      ...schedule, timeZone, durationMinutes, dailyStartMinutes, dailyEndMinutes, slotStepMinutes,
+    });
+    const finalizedStart = schedule.startsAt ?? (onlySlot && new Date(onlySlot.startsAt));
+
     if (dto.templateGatheringId && !identity) {
       throw new UnauthorizedException(
         "Necesitás ingresar para duplicar una juntada",
@@ -367,16 +372,10 @@ export class GatheringsService {
           dailyStartMinutes,
           dailyEndMinutes,
           slotStepMinutes,
-          // La juntada nace confirmada sólo si ya tiene fecha. `finalizedEnd`
-          // queda en null: nadie dijo a qué hora termina, y `durationMinutes`
-          // es cuánto dura un bloque candidato del buscador de horarios, no
-          // cuánto dura la juntada de verdad.
-          status: schedule.startsAt
-            ? GatheringStatus.CONFIRMED
-            : GatheringStatus.OPEN,
-          finalizedStart: schedule.startsAt,
-          finalizedEnd: null,
-          finalizedLocation: schedule.startsAt
+          status: finalizedStart ? GatheringStatus.CONFIRMED : GatheringStatus.OPEN,
+          finalizedStart,
+          finalizedEnd: onlySlot ? new Date(onlySlot.endsAt) : null,
+          finalizedLocation: finalizedStart
             ? (dto.locationHint ?? null)
             : null,
           participants: {
@@ -391,7 +390,7 @@ export class GatheringsService {
               // Con fecha, quien organiza va: confirmarlo sería fricción sin
               // información. Sin fecha el RSVP todavía no aplica para nadie,
               // ni siquiera para quien organiza.
-              ...(schedule.startsAt
+              ...(finalizedStart
                 ? {
                     rsvpStatus: RsvpStatus.GOING,
                     plusOnes: 0,
@@ -645,6 +644,11 @@ export class GatheringsService {
     });
   }
 
+  private onlySlot(window: Parameters<typeof buildSlots>[0]) {
+    const slots = buildSlots(window);
+    return slots.length === 1 ? slots[0] : null;
+  }
+
   async finalizeGathering(
     gatheringId: string,
     participantId: string,
@@ -762,24 +766,15 @@ export class GatheringsService {
       dailyEndMinutes,
     });
 
-    const fixed = dto.fixedSchedule === true;
+    const explicitFixed = dto.fixedSchedule === true;
     if (
-      fixed &&
+      explicitFixed &&
       windowEnd.getTime() - windowStart.getTime() !== durationMinutes * 60_000
     ) {
       throw new BadRequestException(
         "La duración debe coincidir con el inicio y fin del horario fijo",
       );
     }
-    const fixedDateChanged =
-      fixed &&
-      (current.status !== GatheringStatus.CONFIRMED ||
-        current.finalizedStart?.getTime() !== windowStart.getTime() ||
-        current.finalizedEnd?.getTime() !== windowEnd.getTime());
-    const reopen =
-      dto.fixedSchedule === false &&
-      current.status === GatheringStatus.CONFIRMED;
-
     const scheduleChanged =
       windowStart.getTime() !== current.windowStart.getTime() ||
       windowEnd.getTime() !== current.windowEnd.getTime() ||
@@ -787,6 +782,24 @@ export class GatheringsService {
       dailyStartMinutes !== current.dailyStartMinutes ||
       dailyEndMinutes !== current.dailyEndMinutes ||
       slotStepMinutes !== current.slotStepMinutes;
+    const onlySlot = !explicitFixed && (scheduleChanged || dto.fixedSchedule === false)
+      ? this.onlySlot({
+          windowStart, windowEnd, timeZone: current.timeZone, durationMinutes,
+          dailyStartMinutes, dailyEndMinutes, slotStepMinutes,
+        })
+      : null;
+    const fixed = explicitFixed || onlySlot !== null;
+    const fixedStart = onlySlot ? new Date(onlySlot.startsAt) : windowStart;
+    const fixedEnd = onlySlot ? new Date(onlySlot.endsAt) : windowEnd;
+    const fixedDateChanged =
+      fixed &&
+      (current.status !== GatheringStatus.CONFIRMED ||
+        current.finalizedStart?.getTime() !== fixedStart.getTime() ||
+        current.finalizedEnd?.getTime() !== fixedEnd.getTime());
+    const reopen =
+      !fixed && dto.fixedSchedule === false &&
+      current.status === GatheringStatus.CONFIRMED;
+
     const locationHint = dto.locationHint?.trim();
     const locationChanged =
       dto.locationHint !== undefined && locationHint !== current.locationHint;
@@ -829,8 +842,8 @@ export class GatheringsService {
           ...(fixed
             ? {
                 status: GatheringStatus.CONFIRMED,
-                finalizedStart: windowStart,
-                finalizedEnd: windowEnd,
+                finalizedStart: fixedStart,
+                finalizedEnd: fixedEnd,
                 finalizedLocation:
                   dto.locationHint === undefined
                     ? (current.finalizedLocation ?? current.locationHint)

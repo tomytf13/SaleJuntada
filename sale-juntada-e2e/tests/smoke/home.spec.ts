@@ -61,7 +61,7 @@ test("abre una juntada sembrada desde PostgreSQL real", async ({ page, request }
   await expect(
     page.getByRole("heading", { name: "Asado demo en Tucumán" }).first(),
   ).toBeVisible();
-  await expect(page.getByRole("button", {name:"Ingresar para aceptar la invitación"})).toBeVisible();
+  await expect(page.getByRole("button", {name:"Ingresar para responder"})).toBeVisible();
   const gatheringResponse = await request.get("http://127.0.0.1:3001/api/gatherings/asado-demo-tucuman");
   const gathering = await gatheringResponse.json();
   expect(gathering.participants).toEqual([]);
@@ -229,7 +229,7 @@ test("crea una juntada y abre su enlace compartible", async ({ page }) => {
   await page.getByLabel("Nombre de la juntada").fill("Asado del viernes");
   await page.getByLabel("Tu nombre").fill("Tomás");
   await page.getByLabel(/Dirección o lugar/i).fill("Yerba Buena");
-  await page.getByRole("button", { name: /Crear y elegir horarios/i }).click();
+  await page.getByRole("button", { name: /Crear encuesta de horarios/i }).click();
 
   await expect(page).toHaveURL(/\/j\/asado-del-viernes-a1b2c3\/fecha$/);
   await expect(
@@ -739,10 +739,10 @@ test("sin sesión no se puede aceptar una invitación ni crear una juntada", asy
   });
   await page.addInitScript(() => localStorage.setItem("sale-juntada:participant:invite-login", JSON.stringify({participantId:"legacy",responseToken:"old-access"})));
   await page.goto("/j/invite-login/invitados");
-  await expect(page.getByRole("heading", {name:"Ingresá para sumarte"})).toBeVisible();
+  await expect(page.getByRole("heading", {name:"¿Cuándo podés?"})).toBeVisible();
   await expect(page.getByLabel("Tu nombre", {exact:true})).toHaveCount(0);
   await expect(page.getByRole("radiogroup")).toHaveCount(0);
-  await page.getByRole("button", {name:"Ingresar para aceptar la invitación"}).click();
+  await page.getByRole("button", {name:"Ingresar para elegir horarios"}).click();
   await expect(page.getByRole("button", {name:/Google/})).toBeVisible();
   await page.goto("/");
   await page.getByRole("button", {name:/Crear una juntada/}).click();

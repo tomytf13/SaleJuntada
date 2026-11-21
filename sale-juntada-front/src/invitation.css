@@ -323,3 +323,20 @@
   text-decoration: none;
 }
 .invite-directions:focus-visible { outline: 3px solid #809f32; outline-offset: 4px; }
+
+.football-crests {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-block: 12px;
+  color: #52665c;
+  font-size: 13px;
+  font-weight: 700;
+}
+.football-crests img {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+}
+.invite-intro:has(.football-crests) .invite-art { display: none; }
+.gathering-hero.invitation-card .football-crests + h1 { margin-top: 8px; }

@@ -166,6 +166,25 @@ describe("create — modo buscando fecha", () => {
     windowEnd: "2026-09-08T03:00:00.000Z",
   };
 
+  it("confirma el único bloque disponible con su hora de fin", async () => {
+    const { prisma, created } = buildPrisma();
+    await buildService(prisma).create(baseDto({
+      timeZone: TUCUMAN,
+      windowStart: "2026-11-21T22:00:00Z",
+      windowEnd: "2026-11-22T01:30:00Z",
+      dailyStartMinutes: 19 * 60,
+      dailyEndMinutes: 22 * 60 + 30,
+      slotStepMinutes: 60,
+      durationMinutes: 180,
+    }));
+    expect(creationData(created)).toMatchObject({
+      status: GatheringStatus.CONFIRMED,
+      finalizedStart: new Date("2026-11-21T22:00:00Z"),
+      finalizedEnd: new Date("2026-11-22T01:00:00Z"),
+    });
+    expect(organizerData(created).rsvpStatus).toBe(RsvpStatus.GOING);
+  });
+
   it("nace abierta y sin fecha", async () => {
     const { prisma, created } = buildPrisma();
 

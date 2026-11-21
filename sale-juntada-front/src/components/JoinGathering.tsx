@@ -26,8 +26,10 @@ export function JoinGathering({
 }: Props) {
   return (
     <section className="join-gathering" aria-labelledby="join-title">
-      <h2 id="join-title">Aceptá la invitación</h2>
-      <p>Confirmá tu nombre y, si querés, dejá un teléfono de contacto.</p>
+      <h2 id="join-title">{hasDate ? "¿Venís?" : "¿Cuándo podés?"}</h2>
+      <p>{open ? "Así va a aparecer tu nombre en la juntada." : hasDate
+        ? "Sumate para avisarle al grupo si vas."
+        : "Sumate para marcar los horarios que te quedan bien."}</p>
       {open ? (
         <form onSubmit={onSubmit}>
           <label htmlFor="participant-name">Tu nombre</label>
