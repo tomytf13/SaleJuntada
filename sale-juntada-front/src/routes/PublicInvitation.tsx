@@ -1,11 +1,11 @@
 import { ArrowRight, LogIn } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useGathering } from "../hooks/useGathering";
 import { GatheringHero } from "../components/GatheringHero";
 import { AccountDialog } from "../components/AccountDialog";
 import { PwaStatus } from "../components/PwaStatus";
-import { ApiError } from "../services/gatheringService";
+import { ApiError, gatheringService } from "../services/gatheringService";
 import { NotFoundGathering } from "./NotFoundGathering";
 import { GatheringSkeleton } from "./GatheringSkeleton";
 
@@ -14,6 +14,10 @@ export function PublicInvitation() {
   const { gathering, isPending, error, refetch } = useGathering(slug);
   const [loginOpen, setLoginOpen] = useState(false);
   const [shareMessage, setShareMessage] = useState("");
+  const loadedSlug = gathering?.slug;
+  useEffect(() => {
+    if (loadedSlug) void gatheringService.openInvitation(loadedSlug).catch(() => {});
+  }, [loadedSlug]);
   if (isPending) return <GatheringSkeleton />;
   if (error instanceof ApiError && error.status === 404)
     return <NotFoundGathering />;

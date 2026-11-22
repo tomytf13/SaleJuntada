@@ -20,7 +20,7 @@ export class GatheringAccountGuard implements CanActivate {
   async canActivate(context: ExecutionContext) {
     const request = context.switchToHttp().getRequest<Request>();
     const action = context.getHandler().name;
-    if (action === "getPurchaseCatalog") return true;
+    if (action === "getPurchaseCatalog" || action === "openInvitation") return true;
     const token = request.headers["x-participant-token"];
     const authorization = request.headers.authorization;
     if (action === "getBySlug" && (!authorization || !token)) {

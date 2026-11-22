@@ -204,6 +204,9 @@ export type Expense = {
 };
 
 export type ExpenseSettlement = {
+  shares?: Record<string, number>;
+  shareCount?: number;
+  needsShareConfirmation?: boolean;
   totalCents: number;
   participantCount: number;
   averageCents: number;
@@ -418,6 +421,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 let purchaseCatalogRequest: Promise<PurchaseCatalog> | null = null;
 
+export type ReminderSettings = { enabled: boolean; publicKey: string };
+export function reminderPreferences(gathering: string, participant: string, device: string, token: string,
+  method: "GET" | "PUT" | "DELETE", body?: { endpoint: string; p256dh: string; auth: string }) {
+  return request<ReminderSettings>(`/gatherings/${gathering}/participants/${participant}/reminders/${device}`, {
+    method, headers: { "x-participant-token": token }, body: body && JSON.stringify(body),
+  });
+}
+
 export const gatheringService = {
   setGatheringService(
     gatheringId: string,
@@ -451,6 +462,10 @@ export const gatheringService = {
     });
   },
 
+  deleteAccount(accessToken: string) {
+    return request("/users/me", {method:"DELETE",headers:{Authorization:`Bearer ${accessToken}`}});
+  },
+
   getMyGatherings(accessToken: string) {
     return request<GatheringHistoryItem[]>("/users/me/gatherings", {
       headers: { Authorization: `Bearer ${accessToken}` },
@@ -469,6 +484,14 @@ export const gatheringService = {
    * completa (disponibilidad del grupo, coordenadas exactas); sin token,
    * sólo lo necesario para decidir sumarse.
    */
+  identifyInvitation(slug: string, accessToken: string) {
+    return request(`/gatherings/${encodeURIComponent(slug)}/invitation-identified`, {method:"POST",headers:{Authorization:`Bearer ${accessToken}`}});
+  },
+
+  openInvitation(slug: string) {
+    return request(`/gatherings/${encodeURIComponent(slug)}/invitation-open`, {method:"POST"});
+  },
+
   getBySlug(slug: string, participantToken?: string) {
     return request<Gathering>(`/gatherings/${slug}`, {
       headers: participantToken
@@ -904,6 +927,10 @@ export const gatheringService = {
         body: JSON.stringify({ paymentAlias }),
       },
     );
+  },
+
+  saveExpenseShares(id: string, participantId: string, token: string, shares: Record<string,number>) {
+    return request(`/gatherings/${id}/participants/${participantId}/expenses/shares`, {method:"POST", headers:{"x-participant-token":token},body:JSON.stringify({shares})});
   },
 
   markExpensesReady(

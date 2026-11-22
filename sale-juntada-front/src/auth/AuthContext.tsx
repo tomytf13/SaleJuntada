@@ -24,7 +24,13 @@ export function AuthProvider({ children }: PropsWithChildren) {
         setIsLoading(false);
       }
     });
-    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    const { data } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      if (event === "SIGNED_OUT") {
+        void navigator.serviceWorker?.getRegistration()
+          .then(registration => registration?.pushManager?.getSubscription())
+          .then(subscription => subscription?.unsubscribe())
+          .catch(() => {});
+      }
       setSession(nextSession);
       setIsLoading(false);
     });

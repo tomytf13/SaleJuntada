@@ -6,9 +6,10 @@ import { ConfigService } from "@nestjs/config";
 import { SupabaseAuthService } from "./supabase-auth.service";
 
 const getClaims = jest.fn();
+const getUser = jest.fn();
 
 jest.mock("@supabase/supabase-js", () => ({
-  createClient: jest.fn(() => ({ auth: { getClaims } })),
+  createClient: jest.fn(() => ({ auth: { getClaims, getUser } })),
 }));
 
 function configuredService() {
@@ -64,6 +65,7 @@ describe("SupabaseAuthService", () => {
 
   it("devuelve sólo la identidad verificada del subject", async () => {
     const service = configuredService();
+    getUser.mockResolvedValue({ data: { user: { id: "auth-user-id" } } });
     getClaims.mockResolvedValue({
       data: { claims: { sub: "auth-user-id", email: "tomy@example.com" } },
       error: null,

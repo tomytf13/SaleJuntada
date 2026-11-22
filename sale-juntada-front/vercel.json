@@ -4,6 +4,21 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
+      "source": "/j/:slug",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*(WhatsApp|facebookexternalhit|Facebot|TelegramBot|Twitterbot|Slackbot|Discordbot|LinkedInBot).*"
+        }
+      ],
+      "destination": "/api/invite?slug=:slug"
+    },
+    {
+      "source": "/api/invite",
+      "destination": "/api/invite"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

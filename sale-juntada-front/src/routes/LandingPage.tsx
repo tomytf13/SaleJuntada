@@ -188,6 +188,7 @@ export default function LandingPage() {
           <span>Sale Juntada</span>
         </a>
         <p>Hecho para que los planes salgan.</p>
+        <nav aria-label="Información legal"><a href="/privacidad">Privacidad</a> · <a href="/terminos">Términos de uso</a></nav>
         <span>Argentina · 2026</span>
       </footer>
 

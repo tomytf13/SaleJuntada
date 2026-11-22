@@ -4,6 +4,18 @@ Aplicación mobile-first para organizar juntadas en grupo sin perder horas en en
 
 Sale Juntada ayuda a coordinar una reunión con amigos, familia o equipo de trabajo definiendo un rango de fechas, recibiendo la disponibilidad de cada persona, buscando los mejores horarios de coincidencia y cerrando la propuesta con confirmación y gastos compartidos.
 
+## Paleta oficial de Sale Juntada
+
+La app y las piezas de marca comparten los tres colores del mate con chispa.
+
+| Color | HEX | Uso en la marca |
+| --- | --- | --- |
+| Verde mate | `#0B4937` | Color principal. Da fondo al ícono y dibuja la sonrisa del mate. |
+| Crema | `#FFF7E7` | Da forma al mate y a la bombilla. Se usa para el nombre sobre fondo verde. |
+| Lima | `#B9F54A` | Color de acento de la chispa junto a la bombilla. |
+
+El [ícono maestro en SVG](sale-juntada-front/public/pwa-icon.svg) es la referencia para reproducir la paleta en la web, la app instalada y los perfiles sociales.
+
 ## ✨ Qué hace
 
 - Crea una juntada con nombre, fechas, horario y duración

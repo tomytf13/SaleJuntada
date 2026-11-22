@@ -134,7 +134,7 @@ test("permite elegir disponibilidad y buscar coincidencias", async ({ page }) =>
       await route.fulfill({ status: 200, json: gathering });
       return;
     }
-    if (request.method() === "POST") {
+    if (request.method() === "POST" && request.url().endsWith("/participants/auth")) {
       gathering.participants.push({ id: "participant-availability", name: "Sofi", isOrganizer: false, availabilities: [] });
       await route.fulfill({
         status: 201,
@@ -288,7 +288,7 @@ test("un invitado con cuenta acepta y guarda su disponibilidad", async ({
       await route.fulfill({ status: 200, json: gathering });
       return;
     }
-    if (request.method() === "POST") {
+    if (request.method() === "POST" && request.url().endsWith("/participants/auth")) {
       gathering.participants.push({ id: "participant-2", name: "Sofi", isOrganizer: false, availabilities: [] });
       await route.fulfill({
         status: 201,
@@ -454,7 +454,7 @@ test("carga un gasto y calcula quién transfiere a quién", async ({ page }) => 
       });
       return;
     }
-    if (request.method() === "POST") {
+    if (request.method() === "POST" && request.url().endsWith("/participants/auth")) {
       gathering.participants.push({ id: "participant-3", name: "Sofi", isOrganizer: false, availabilities: [] });
       await route.fulfill({
         status: 201,
@@ -734,7 +734,7 @@ test("el grupo elige responsables y el organizador edita la compra", async ({
 test("sin sesión no se puede aceptar una invitación ni crear una juntada", async ({ page }) => {
   const mutations: string[] = [];
   await page.route("**/api/gatherings**", async (route) => {
-    if (route.request().method() !== "GET") mutations.push(route.request().url());
+    if (route.request().method() !== "GET") mutations.push(route.request().method() + " " + new URL(route.request().url()).pathname);
     await route.fulfill({ status: 200, json: { id: "private", slug: "invite-login", title: "Invitación con cuenta", ...gatheringSchedule, status: "OPEN", participants: [], isParticipant: false, participantCount: 1 } });
   });
   await page.addInitScript(() => localStorage.setItem("sale-juntada:participant:invite-login", JSON.stringify({participantId:"legacy",responseToken:"old-access"})));
@@ -747,5 +747,5 @@ test("sin sesión no se puede aceptar una invitación ni crear una juntada", asy
   await page.goto("/");
   await page.getByRole("button", {name:/Crear una juntada/}).click();
   await expect(page.getByRole("dialog", {name:"Ingresar a Sale Juntada"})).toBeVisible();
-  expect(mutations).toEqual([]);
+  expect([...new Set(mutations)]).toEqual(["POST /api/gatherings/invite-login/invitation-open"]);
 });

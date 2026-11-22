@@ -10,6 +10,13 @@ import "./index.css";
 import "./premium.css";
 import "./invitation.css";
 
+navigator.serviceWorker?.addEventListener("message", (event) => {
+  if (event.data?.type !== "sale-juntada-reminder") return;
+  const port = event.ports[0];
+  if (!port || document.visibilityState !== "visible") { port?.postMessage(false); return; }
+  void new Audio("/aviso-mate.wav").play().then(() => port.postMessage(true), () => port.postMessage(false));
+});
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {

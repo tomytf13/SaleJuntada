@@ -93,6 +93,7 @@ describe("servicios de una juntada", () => {
     gathering.expenses = [
       { id: "expense", paidByParticipantId: "me", amountCents: 5000 },
     ];
+    Object.assign(gathering, {expenseShares: {me: 1}});
     gathering.participants[0].expensesReadyAt = new Date();
     await set("cuentas", false);
     const archive = await service.getExpenseSettlement("g");
@@ -105,7 +106,7 @@ describe("servicios de una juntada", () => {
     expect(await service.getExpenseSettlement("g")).toEqual(archive);
     await set("cuentas", true);
     expect(gathering.archivedExpenseSettlement).toBe(Prisma.DbNull);
-    expect((await service.getExpenseSettlement("g")).participantCount).toBe(2);
+    expect((await service.getExpenseSettlement("g")).participantCount).toBe(1);
     expect(gathering.expenses).toHaveLength(1);
   });
   it("permite archivar Cuentas vacías sin exigir confirmaciones", async () => {

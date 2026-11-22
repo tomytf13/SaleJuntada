@@ -19,6 +19,15 @@ export class UsersController {
     return this.usersService.getGatheringHistory(identity);
   }
 
+  @Delete("me")
+  async deleteAccount(
+    @Headers("authorization") authorization: string | undefined,
+  ) {
+    return this.usersService.deleteAccount(
+      await this.authService.requireIdentity(authorization),
+    );
+  }
+
   @Delete("me/gatherings/:gatheringId")
   async deleteMyGathering(
     @Param("gatheringId") gatheringId: string,

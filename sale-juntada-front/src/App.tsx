@@ -4,6 +4,7 @@ import { GatheringSkeleton } from "./routes/GatheringSkeleton";
 
 const LandingPage = lazy(() => import("./routes/LandingPage"));
 const GatheringPage = lazy(() => import("./routes/GatheringPage"));
+const LegalPage = lazy(() => import("./routes/LegalPage"));
 const NotFoundPage = lazy(() => import("./routes/NotFoundPage"));
 
 function GatheringRoute() {
@@ -41,6 +42,8 @@ export default function App() {
     <Suspense fallback={<GatheringSkeleton />}>
       <Routes>
         <Route path="/" element={<LandingPage />} />
+        <Route path="/privacidad" element={<LegalPage policy="privacy" />} />
+        <Route path="/terminos" element={<LegalPage policy="terms" />} />
         <Route path="/j/:slug/*" element={<GatheringRoute />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>

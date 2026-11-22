@@ -91,6 +91,24 @@ export class GatheringsController {
     return this.gatheringsService.getBySlug(slug, participantToken);
   }
 
+  @Post(":slug/invitation-identified")
+  async identifyInvitation(
+    @Param("slug") slug: string,
+    @Headers("authorization") authorization: string | undefined,
+  ) {
+    await this.gatheringsService.identifyInvitation(
+      slug,
+      await this.authService.requireIdentity(authorization),
+    );
+    return { ok: true };
+  }
+
+  @Post(":slug/invitation-open")
+  async openInvitation(@Param("slug") slug: string) {
+    await this.gatheringsService.openInvitation(slug);
+    return { ok: true };
+  }
+
   // Catálogo de productos: es contenido estático de la app, sin datos de
   // ninguna persona. Se mantiene público a propósito.
   @Get("catalog/purchase")
@@ -591,6 +609,23 @@ export class GatheringsController {
   @Get(":gatheringId/expenses/settlement")
   getExpenseSettlement(@Param("gatheringId") gatheringId: string) {
     return this.gatheringsService.getExpenseSettlement(gatheringId);
+  }
+
+  @Post(":gatheringId/participants/:participantId/expenses/shares")
+  async saveExpenseShares(
+    @Param("gatheringId") id: string,
+    @Param("participantId") member: string,
+    @Headers("x-participant-token") token: string | undefined,
+    @Body("shares") shares: Record<string, number>,
+  ) {
+    const organizer = await this.gatheringsService.saveExpenseShares(
+      id,
+      member,
+      token,
+      shares,
+    );
+    this.gatheringsGateway.expensesChanged(id, organizer.name);
+    return { saved: true };
   }
 
   @Post(":gatheringId/participants/:participantId/expenses/ready")
