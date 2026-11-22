@@ -112,6 +112,15 @@ export function AccountDialog({
     }
   };
 
+  const deleteAccount = async () => {
+    if (!accessToken || !window.confirm("¿Eliminar tu cuenta y todas las juntadas que organizaste, también para tus invitados? En las juntadas de otras personas tus movimientos quedarán como Cuenta eliminada. Esta acción es permanente.")) return;
+    await run(async () => {
+      await gatheringService.deleteAccount(accessToken);
+      Object.keys(localStorage).filter(key => key.startsWith("sale-juntada:")).forEach(key => localStorage.removeItem(key));
+      try { await signOut(); } finally { window.location.replace("/"); }
+    });
+  };
+
   const metadata = user?.user_metadata ?? {};
   const name = userDisplayName(user?.email, metadata);
   const avatarValue = metadata.avatar_url ?? metadata.picture;
@@ -227,8 +236,10 @@ export function AccountDialog({
             disabled={isSubmitting}
             onClick={() => void run(signOut)}
           >
-            {isSubmitting ? "Cerrando sesión…" : "Cerrar sesión"}
+            Cerrar sesión
           </button>
+          <button type="button" className="account-delete-button" disabled={isSubmitting} onClick={() => void deleteAccount()}>Eliminar mi cuenta</button>
+          {error && <p role="alert">{error}</p>}
         </>
       ) : (
         <>
@@ -263,7 +274,7 @@ export function AccountDialog({
             </small>
           ) : null}
           <small className="privacy-note">
-            Sólo usamos tu nombre, email y foto para identificar tu cuenta.
+            Al continuar declarás que tenés 18 años o más. Consultá cómo usamos tus datos en <a href="/privacidad">Privacidad</a> y leé los <a href="/terminos">Términos de uso</a>.
           </small>
         </>
       )}

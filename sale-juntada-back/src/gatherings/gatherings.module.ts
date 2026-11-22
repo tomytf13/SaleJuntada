@@ -1,3 +1,5 @@
+import { RemindersService } from "./reminders/reminders.service";
+import { RemindersController } from "./reminders/reminders.controller";
 import { GatheringAccountGuard } from "./gathering-account.guard";
 import { ChecklistService } from "./checklist.service";
 import { Module } from "@nestjs/common";
@@ -9,7 +11,7 @@ import { GatheringsService } from "./gatherings.service";
 
 @Module({
   imports: [ParticipantsModule, RsvpModule],
-  controllers: [GatheringsController],
-  providers: [GatheringAccountGuard, GatheringsService, GatheringsGateway, ChecklistService],
+  controllers: [GatheringsController, RemindersController],
+  providers: [RemindersService, GatheringAccountGuard, GatheringsService, GatheringsGateway, ChecklistService],
 })
 export class GatheringsModule {}

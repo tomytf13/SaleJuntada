@@ -38,6 +38,41 @@ function buildService(prisma: PrismaService) {
 }
 
 describe("GatheringsService expense settlement", () => {
+  it("incluye acompañantes, acredita la seña de quien faltó y espera sólo a quienes dividen", async () => {
+    const participants = ["a", "b", "c", "d"].map((id, index) => ({
+      id,
+      name: id,
+      rsvpStatus: index === 3 ? "NOT_GOING" : "GOING",
+      plusOnes: index === 0 ? 1 : 0,
+      expensesReadyAt: index === 3 ? null : new Date(),
+    }));
+    const gathering = {
+      status: "CONFIRMED",
+      participants,
+      expenseShares: null as Record<string, number> | null,
+      expenses: [{ paidByParticipantId: "d", amountCents: 10001 }],
+      transferConfirmations: [],
+      expenseRound: 1,
+    };
+    const service = buildService({
+      gathering: { findUnique: jest.fn().mockResolvedValue(gathering) },
+    } as unknown as PrismaService);
+    const preview = await service.getExpenseSettlement("g");
+    expect(preview.shares).toEqual({ a: 2, b: 1, c: 1, d: 0 });
+    expect(preview.allReady).toBe(false);
+    gathering.expenseShares = preview.shares;
+    participants[0].plusOnes = 0;
+    const closed = await service.getExpenseSettlement("g");
+    expect(closed.allReady).toBe(true);
+    expect(closed.balances.map((p) => p.owedCents)).toEqual([
+      5001, 2500, 2500, 0,
+    ]);
+    expect(closed.transfers.every((t) => t.toParticipantId === "d")).toBe(true);
+    expect(closed.transfers.reduce((sum, t) => sum + t.amountCents, 0)).toBe(
+      10001,
+    );
+  });
+
   it("divide en partes iguales y genera transferencias directas", async () => {
     const participants = [
       {
@@ -842,6 +877,7 @@ describe("GatheringsService payment aliases", () => {
       gathering: {
         findUnique: jest.fn().mockResolvedValue({
           participants,
+          expenseShares: Object.fromEntries(participants.map(p => [p.id, 1])),
           expenses: [
             {
               id: "expense",
@@ -1041,7 +1077,7 @@ describe("GatheringsService expense corrections", () => {
 
     expect(result.expense.amountCents).toBe(12_000);
     expect(transaction.participant.updateMany).toHaveBeenCalledWith({
-      where: { gatheringId: "gathering" },
+      where: { gatheringId: "gathering", accountDeletedAt: null },
       data: { expensesReadyAt: null },
     });
   });
@@ -1078,6 +1114,7 @@ describe("GatheringsService transfer confirmations", () => {
       gathering: {
         findUnique: jest.fn().mockResolvedValue({
           participants,
+          expenseShares: Object.fromEntries(participants.map(p => [p.id, 1])),
           expenses: [
             {
               id: "expense-b",

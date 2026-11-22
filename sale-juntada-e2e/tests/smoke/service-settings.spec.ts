@@ -280,6 +280,7 @@ test("Cuentas exige cierre, conserva su liquidación al archivar y bloquea carre
   });
   expect(expense.ok()).toBeTruthy();
   expect((await toggle(false)).status()).toBe(409);
+  expect((await request.post(`${orgUrl}/expenses/shares`, {headers: headers(organizer), data: {shares: {[organizer.id]: 1, [friend.id]: 1}}})).ok()).toBeTruthy();
   for (const p of [organizer, friend])
     expect(
       (
@@ -316,7 +317,7 @@ test("Cuentas exige cierre, conserva su liquidación al archivar y bloquea carre
   ).toBeTruthy();
   expect(await read()).toEqual(archived);
   expect((await toggle(true)).ok()).toBeTruthy();
-  expect((await read()).transfers.length).toBeGreaterThan(0);
+  expect((await read()).transfers).toHaveLength(0);
 
   const race = await fixture(request);
   const raceUrl = participantUrl(race.gathering.id, race.organizer);

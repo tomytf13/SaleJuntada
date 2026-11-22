@@ -64,6 +64,10 @@ model Gathering {
   finalizedStart        DateTime?
   finalizedEnd          DateTime?
   finalizedLocation     String?
+  expenseShares         Json?
+  inviteOpenedAt        DateTime?
+  inviteIdentifiedAt    DateTime?
+  inviteRespondedAt     DateTime?
   expenseRound          Int                    @default(1)
   disabledServices      GatheringServiceKey[]  @default([])
   archivedExpenseSettlement Json?
@@ -88,6 +92,7 @@ model Participant {
   isBirthdayPerson      Boolean                @default(false)
   instagramUsername     String?
   authUserId            String?
+  accountDeletedAt      DateTime?
   dietaryPreferences    String[]               @default([])
   mealArrangement       String?
   paymentAlias          String?
@@ -108,6 +113,7 @@ model Participant {
   plusOnes              Int                    @default(0)
   rsvpAt                DateTime?
   expensesReadyAt       DateTime?
+  reminders             GatheringReminder[]
   availabilities        Availability[]
   expensesPaid          Expense[]
   transfersSent         TransferConfirmation[] @relation("TransferFrom")
@@ -302,4 +308,23 @@ model CatalogPresentation {
 
   @@unique([productId, key])
   @@index([productId, isActive, position])
+}
+
+model GatheringReminder {
+  participantId String
+  deviceId      String
+  endpoint      String
+  p256dh        String
+  auth          String
+  nextCheck     DateTime
+  participant   Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+
+  @@id([participantId, deviceId])
+  @@index([nextCheck])
+}
+
+model ReminderSigningKey {
+  id         Int @id
+  publicKey  String
+  privateKey String
 }

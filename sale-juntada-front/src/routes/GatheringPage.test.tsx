@@ -26,6 +26,8 @@ const auth = vi.hoisted(() => ({
 }));
 
 const service = vi.hoisted(() => ({
+  openInvitation: vi.fn().mockResolvedValue({}),
+  identifyInvitation: vi.fn().mockResolvedValue({}),
   getBySlug: vi.fn(),
   addParticipant: vi.fn(),
   addAuthenticatedParticipant: vi.fn(),
@@ -87,6 +89,8 @@ beforeEach(() => {
   auth.value.user = { id: "account-1", email: "sofi@example.com", user_metadata: {} };
   auth.value.accessToken = "account-token";
   service.getBySlug.mockReset();
+  service.openInvitation.mockResolvedValue({});
+  service.identifyInvitation.mockResolvedValue({});
   localStorage.clear();
   window.scrollTo = vi.fn();
   live.connections.mockClear();

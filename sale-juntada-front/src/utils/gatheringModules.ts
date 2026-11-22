@@ -1,4 +1,5 @@
 import {
+  Bell,
   CalendarDays,
   ClipboardCheck,
   Dices,
@@ -33,6 +34,7 @@ export function isGatheringServiceEnabled(
 }
 
 export const gatheringModules = [
+  { path: "notificaciones", title: "Notificaciones", detail: "Avisos de asistencia, gastos y transferencias", icon: Bell },
   {
     path: "invitados",
     title: "Invitados",

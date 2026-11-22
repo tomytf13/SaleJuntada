@@ -1,3 +1,5 @@
+import { ExpenseSharesEditor } from "../components/ExpenseSharesEditor";
+import { GatheringReminders } from "../components/GatheringReminders";
 import { ParticipantInstagramEditor } from "../components/ParticipantInstagramEditor";
 import { ParticipantProfileEditor } from "../components/ParticipantProfileEditor";
 import { GatheringDatePlace } from "../components/GatheringDatePlace";
@@ -151,6 +153,10 @@ function GatheringWorkspace() {
     refresh: refreshGathering,
   } = gatheringQuery;
   const rsvp = useRsvp(slug, activeGathering?.id, authorizedSession);
+  const loadedSlug = activeGathering?.slug;
+  useEffect(() => {
+    if (loadedSlug && accessToken) void gatheringService.identifyInvitation(loadedSlug, accessToken).catch(() => {});
+  }, [loadedSlug, accessToken]);
   const eventName = activeGathering?.title ?? "";
   const location =
     activeGathering?.finalizedLocation ??
@@ -783,6 +789,7 @@ function GatheringWorkspace() {
   };
 
   const shareEvent = async () => {
+    const invitationUrl = new URL(basePath, window.location.origin).href;
     const text =
       activeGathering?.status === "CONFIRMED"
         ? `¿Sale juntada? Decí si venís a “${eventName}”.`
@@ -792,11 +799,11 @@ function GatheringWorkspace() {
         await navigator.share({
           title: eventName,
           text,
-          url: window.location.href,
+          url: invitationUrl,
         });
         return;
       }
-      await navigator.clipboard.writeText(`${text} ${window.location.href}`);
+      await navigator.clipboard.writeText(`${text} ${invitationUrl}`);
       setNotice("Link copiado. Mandalo al grupo y listo.");
     } catch {
       setNotice("El link está listo para compartir.");
@@ -1014,9 +1021,7 @@ function GatheringWorkspace() {
       await navigator.clipboard.writeText(paymentAlias);
       showNotice("Alias copiado. Verificá el titular antes de transferir.");
     } catch {
-      setApiError(
-        "No pudimos copiar el alias. Mantenelo presionado para copiarlo.",
-      );
+      setApiError(`Copiá el alias manualmente: ${paymentAlias}`);
     }
   };
 
@@ -1600,6 +1605,11 @@ function GatheringWorkspace() {
               </div>
             ) : null}
 
+            {view === "notificaciones" && currentParticipant && participantSession && (
+              <GatheringReminders key={currentParticipant.id} gatheringId={activeGathering.id}
+                participantId={currentParticipant.id} token={participantSession.responseToken} />
+            )}
+
             {overviewProps && !view ? (
               <GatheringHome {...overviewProps} />
             ) : null}
@@ -1957,9 +1967,7 @@ function GatheringWorkspace() {
                       </span>
                       <h2>Dividir gastos sin calculadora.</h2>
                       <p>
-                        Cada uno carga lo que pagó. Dividimos el total entre las{" "}
-                        {activeGathering.participants.length} personas y
-                        evitamos transferencias innecesarias.
+                        Cada uno carga lo que pagó. Cada acompañante cuenta como una parte a cargo de quien lo trae.
                       </p>
                     </div>
                     <div className="expense-total">
@@ -1974,6 +1982,21 @@ function GatheringWorkspace() {
                     </div>
                   </div>
 
+                  {expenseSettlement.shares && (
+                    <ExpenseSharesEditor
+                      key={JSON.stringify(expenseSettlement.shares)}
+                      shares={expenseSettlement.shares}
+                      members={expenseSettlement.balances}
+                      isOrganizer={currentParticipant.isOrganizer}
+                      needsConfirmation={Boolean(expenseSettlement.needsShareConfirmation)}
+                      onSave={async shares => {
+                        if (!participantSession) return;
+                        await gatheringService.saveExpenseShares(activeGathering.id, participantSession.participantId, participantSession.responseToken, shares);
+                        setExpenseSettlement(await gatheringService.getExpenseSettlement(activeGathering.id, participantSession.responseToken));
+                        showNotice("Reparto guardado.");
+                      }}
+                    />
+                  )}
                   <div className="live-collaboration" aria-live="polite">
                     <span className="live-dot" />
                     <strong>
@@ -2012,7 +2035,7 @@ function GatheringWorkspace() {
                     </AnimatePresence>
                   </div>
 
-                  {(expenseSettlement?.expenses.length ?? 0) > 0 && (
+                  {((expenseSettlement?.expenses.length ?? 0) > 0 || activeGathering.status === "CONFIRMED") && (
                     <div
                       className={`expense-closing ${expenseSettlement?.allReady ? "ready" : ""}`}
                     >
@@ -2025,12 +2048,13 @@ function GatheringWorkspace() {
                         </span>
                         <strong>
                           {expenseSettlement?.allReady
-                            ? "Cuentas cerradas: ya pueden transferir"
-                            : "Esperando que todos terminen de cargar"}
+                            ? expenseSettlement.transfers.length ? "Cuentas cerradas: ya pueden transferir" : "Cuentas al día"
+                            : expenseSettlement.needsShareConfirmation ? "Falta que quien organiza confirme el reparto" : "Esperando que todos terminen de cargar"}
                         </strong>
                         <p>
                           {expenseSettlement?.allReady
                             ? "La división quedó congelada. Si aparece un gasto tarde, calcularemos solamente la diferencia."
+                            : expenseSettlement.needsShareConfirmation ? "Revisá las partes antes de cerrar los gastos."
                             : `${expenseSettlement?.readyParticipants.length ?? 0}/${expenseSettlement?.participantCount ?? 0} confirmaron. Faltan ${listNames(expenseSettlement?.pendingReadyParticipants.map((participant) => participant.name) ?? [])}.`}
                         </p>
                       </div>
@@ -2038,6 +2062,8 @@ function GatheringWorkspace() {
                         <span className="ready-confirmation">
                           👀 Modo espectador
                         </span>
+                      ) : expenseSettlement.shares && !expenseSettlement.shares[currentParticipant.id] ? (
+                        <span className="ready-confirmation">No tenés partes asignadas.</span>
                       ) : currentParticipantExpensesReady ? (
                         <span className="ready-confirmation">
                           ✓ Ya confirmaste
@@ -2046,11 +2072,11 @@ function GatheringWorkspace() {
                         <button
                           type="button"
                           onClick={markExpensesReady}
-                          disabled={isMarkingExpensesReady}
+                          disabled={isMarkingExpensesReady || expenseSettlement.needsShareConfirmation}
                         >
                           {isMarkingExpensesReady
                             ? "Confirmando…"
-                            : "Ya cargué todos mis gastos"}
+                            : expenseSettlement.expenses.length ? "Ya cargué todos mis gastos" : "No tengo gastos para cargar"}
                         </button>
                       )}
                     </div>
@@ -2271,38 +2297,37 @@ function GatheringWorkspace() {
                               />
                               <div>
                                 <strong>{transfer.fromName}</strong>
-                                <small>le transfiere a {transfer.toName}</small>
-                                {expenseSettlement.allReady &&
-                                transfer.fromParticipantId ===
-                                  currentParticipant?.id ? (
-                                  recipientAliases.get(
-                                    transfer.toParticipantId,
-                                  ) ? (
-                                    <button
-                                      className="transfer-alias"
-                                      type="button"
-                                      onClick={() =>
-                                        void copyPaymentAlias(
-                                          recipientAliases.get(
-                                            transfer.toParticipantId,
-                                          )!,
-                                        )
-                                      }
-                                      title="Copiar alias"
-                                    >
-                                      Alias:{" "}
-                                      {recipientAliases.get(
-                                        transfer.toParticipantId,
-                                      )}
-                                      <span aria-hidden="true">⧉</span>
-                                    </button>
-                                  ) : (
-                                    <small className="transfer-alias-missing">
-                                      {transfer.toName} todavía no cargó su
-                                      alias
-                                    </small>
-                                  )
-                                ) : null}
+                                <div className="transfer-recipient">
+                                  <small>le transfiere a <strong>{transfer.toName}</strong></small>
+                                  {expenseSettlement.allReady &&
+                                  transfer.fromParticipantId ===
+                                    currentParticipant?.id ? (
+                                    recipientAliases.get(
+                                      transfer.toParticipantId,
+                                    ) ? (
+                                      <button
+                                        className="transfer-alias"
+                                        type="button"
+                                        onClick={() =>
+                                          void copyPaymentAlias(
+                                            recipientAliases.get(
+                                              transfer.toParticipantId,
+                                            )!,
+                                          )
+                                        }
+                                        aria-label={`Copiar alias de ${transfer.toName}`}
+                                        title={recipientAliases.get(transfer.toParticipantId) ?? undefined}
+                                      >
+                                        <span aria-hidden="true">⧉</span> Copiar alias
+                                      </button>
+                                    ) : (
+                                      <small className="transfer-alias-missing">
+                                        {transfer.toName} todavía no cargó su
+                                        alias
+                                      </small>
+                                    )
+                                  ) : null}
+                                </div>
                               </div>
                               <b>{formatMoney(transfer.amountCents)}</b>
                               <span className="transfer-arrow">→</span>

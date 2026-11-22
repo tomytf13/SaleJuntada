@@ -141,6 +141,10 @@ await addExpense(gathering, participants[1], "Bebidas", 1_800_000);
 await addExpense(gathering, participants[2], "Hielo y carbón", 700_000);
 
 console.log("El grupo empieza a cerrar la ronda 1.");
+await api(`/gatherings/${gathering.id}/participants/${organizer.id}/expenses/shares`, {
+  method: "POST", headers: participantHeaders(organizer),
+  body: JSON.stringify({shares: Object.fromEntries(participants.map(p => [p.id, 1]))}),
+});
 for (const participant of participants) {
   await markReady(gathering, participant);
 }

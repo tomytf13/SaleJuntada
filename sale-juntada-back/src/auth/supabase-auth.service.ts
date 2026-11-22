@@ -55,6 +55,11 @@ export class SupabaseAuthService {
       throw new UnauthorizedException("Tu sesión venció. Volvé a ingresar");
     }
 
+    // A signed JWT can outlive the account that issued it.
+    const live = await this.client.auth.getUser(token);
+    if (live.error || live.data.user?.id !== subject) {
+      throw new UnauthorizedException("Tu sesión venció. Volvé a ingresar");
+    }
     return {
       id: subject,
       ...(typeof data.claims.exp === "number"

@@ -32,16 +32,9 @@ export function PaymentAliasEditor({
 
   return (
     <form className="payment-alias-card" onSubmit={submit} noValidate>
-      <div className="payment-alias-icon" aria-hidden="true">
-        $
-      </div>
       <div className="payment-alias-copy">
         <label htmlFor="payment-alias">Tu alias para transferencias</label>
-        <p>
-          {persistsToProfile
-            ? "Lo vamos a recordar para tus próximas juntadas."
-            : "Queda disponible para quienes deban transferirte en esta juntada."}
-        </p>
+
         <div className="payment-alias-controls">
           <input
             id="payment-alias"
@@ -60,8 +53,8 @@ export function PaymentAliasEditor({
             }}
             aria-describedby="payment-alias-help"
           />
-          <button type="submit" disabled={isSaving}>
-            {isSaving ? "Guardando…" : "Guardar alias"}
+          <button type="submit" aria-label="Guardar alias" disabled={isSaving}>
+            {isSaving ? "Guardando…" : "Guardar"}
           </button>
           {paymentAlias ? (
             <button
@@ -79,7 +72,7 @@ export function PaymentAliasEditor({
           ) : null}
         </div>
         <small id="payment-alias-help">
-          Compartimos el alias únicamente con integrantes que deban pagarte.
+          Solo lo ve quien deba pagarte.{persistsToProfile && " Se guarda para tus próximas juntadas."}
         </small>
         {error ? (
           <small className="form-error" role="alert">

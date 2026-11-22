@@ -63,6 +63,7 @@ export default defineConfig({
         ],
       },
       workbox: {
+        importScripts: ["/recordatorios.js"],
         navigateFallback: "/index.html",
         navigateFallbackDenylist: [/^\/api\//],
         cleanupOutdatedCaches: true,

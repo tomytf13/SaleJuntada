@@ -493,6 +493,20 @@ export class GatheringsService {
    * `Gathering` suma una columna, no se filtra sola por haberse olvidado de
    * excluirla.
    */
+  async identifyInvitation(slug: string, identity: AuthIdentity) {
+    await this.prisma
+      .$executeRaw`UPDATE "Gathering" g SET "inviteIdentifiedAt" = CURRENT_TIMESTAMP,
+      "inviteOpenedAt" = COALESCE("inviteOpenedAt", CURRENT_TIMESTAMP)
+      WHERE g.slug = ${slug} AND g."inviteIdentifiedAt" IS NULL AND NOT EXISTS (
+        SELECT 1 FROM "Participant" WHERE "gatheringId" = g.id AND "isOrganizer" AND "authUserId" = ${identity.id})`;
+  }
+
+  async openInvitation(slug: string) {
+    // A metric must not reorder the organizer's event history (updatedAt).
+    await this.prisma
+      .$executeRaw`UPDATE "Gathering" SET "inviteOpenedAt" = CURRENT_TIMESTAMP WHERE slug = ${slug} AND "inviteOpenedAt" IS NULL`;
+  }
+
   async getBySlug(slug: string, participantToken?: string) {
     const gathering = await this.prisma.gathering.findUnique({
       where: { slug },
@@ -1862,6 +1876,64 @@ export class GatheringsService {
     return this.calculateExpenseSettlement(gatheringId);
   }
 
+  async saveExpenseShares(
+    gatheringId: string,
+    participantId: string,
+    token: string | undefined,
+    shares: Record<string, number>,
+  ) {
+    const organizer = await this.participantAuth.requireOrganizer(
+      gatheringId,
+      participantId,
+      token,
+    );
+    return withActiveGatheringService(
+      this.prisma,
+      gatheringId,
+      "cuentas",
+      async (tx) => {
+        const members = await tx.participant.findMany({
+          where: { gatheringId },
+          select: { id: true },
+        });
+        if (
+          !shares ||
+          Array.isArray(shares) ||
+          typeof shares !== "object" ||
+          Object.keys(shares).length !== members.length ||
+          !members.every(
+            ({ id }) =>
+              Object.prototype.hasOwnProperty.call(shares, id) &&
+              Number.isInteger(shares[id]) &&
+              shares[id] >= 0 &&
+              shares[id] <= 100,
+          ) ||
+          !Object.values(shares).some((n) => n > 0)
+        ) {
+          throw new BadRequestException(
+            "Revisá las partes del grupo. Incluí al menos a una persona.",
+          );
+        }
+        const current = await tx.gathering.findUniqueOrThrow({
+          where: { id: gatheringId },
+          select: { expenseShares: true },
+        });
+        const previous = current.expenseShares as Record<string, number> | null;
+        if (
+          !previous ||
+          !members.every(({ id }) => (previous[id] ?? 0) === shares[id])
+        ) {
+          await this.reopenExpenses(tx, gatheringId);
+          await tx.gathering.update({
+            where: { id: gatheringId },
+            data: { expenseShares: shares },
+          });
+        }
+        return { name: organizer.name };
+      },
+    );
+  }
+
   private async calculateExpenseSettlement(
     gatheringId: string,
     database: Prisma.TransactionClient = this.prisma,
@@ -1869,7 +1941,7 @@ export class GatheringsService {
     const gathering = await database.gathering.findUnique({
       where: { id: gatheringId },
       include: {
-        participants: { orderBy: { createdAt: "asc" } },
+        participants: { orderBy: [{ createdAt: "asc" }, { id: "asc" }] },
         expenses: {
           include: {
             paidBy: { select: { id: true, name: true, avatarUrl: true } },
@@ -1885,21 +1957,39 @@ export class GatheringsService {
       (total, expense) => total + expense.amountCents,
       0,
     );
-    const participantCount = gathering.participants.length;
-    const readyParticipants = gathering.participants
+    const saved = gathering.expenseShares as Record<string, number> | null;
+    const shares = Object.fromEntries(
+      gathering.participants.map((p) => [
+        p.id,
+        saved
+          ? (saved[p.id] ?? 0)
+          : gathering.status === "CONFIRMED"
+            ? p.rsvpStatus === "GOING"
+              ? 1 + p.plusOnes
+              : 0
+            : 1,
+      ]),
+    );
+    const included = gathering.participants.filter((p) => shares[p.id] > 0);
+    const participantCount = included.length;
+    const shareCount = Object.values(shares).reduce((sum, n) => sum + n, 0);
+    const needsShareConfirmation = !saved;
+    const readyParticipants = included
       .filter((participant) => participant.expensesReadyAt !== null)
       .map((participant) => ({
         participantId: participant.id,
         name: participant.name,
       }));
-    const pendingReadyParticipants = gathering.participants
+    const pendingReadyParticipants = included
       .filter((participant) => participant.expensesReadyAt === null)
       .map((participant) => ({
         participantId: participant.id,
         name: participant.name,
       }));
     const allReady =
-      participantCount > 0 && readyParticipants.length === participantCount;
+      !needsShareConfirmation &&
+      participantCount > 0 &&
+      readyParticipants.length === participantCount;
     const participantNames = new Map(
       gathering.participants.map((participant) => [
         participant.id,
@@ -1920,24 +2010,8 @@ export class GatheringsService {
         confirmedAt: confirmation.confirmedAt,
       }),
     );
-    if (participantCount === 0) {
-      return {
-        totalCents,
-        participantCount,
-        averageCents: 0,
-        expenseRound: gathering.expenseRound,
-        expenses: gathering.expenses,
-        balances: [],
-        transfers: [],
-        completedTransfers,
-        readyParticipants,
-        pendingReadyParticipants,
-        allReady,
-      };
-    }
-
-    const baseShare = Math.floor(totalCents / participantCount);
-    const remainder = totalCents % participantCount;
+    const baseShare = shareCount ? Math.floor(totalCents / shareCount) : 0;
+    let remainder = shareCount ? totalCents % shareCount : 0;
     const paidByParticipant = new Map<string, number>();
     for (const expense of gathering.expenses) {
       paidByParticipant.set(
@@ -1947,8 +2021,10 @@ export class GatheringsService {
       );
     }
 
-    const balances = gathering.participants.map((participant, index) => {
-      const owedCents = baseShare + (index < remainder ? 1 : 0);
+    const balances = gathering.participants.map((participant) => {
+      const extra = Math.min(remainder, shares[participant.id]);
+      remainder -= extra;
+      const owedCents = baseShare * shares[participant.id] + extra;
       const paidCents = paidByParticipant.get(participant.id) ?? 0;
       return {
         participantId: participant.id,
@@ -2020,7 +2096,10 @@ export class GatheringsService {
     return {
       totalCents,
       participantCount,
-      averageCents: Math.round(totalCents / participantCount),
+      shares,
+      shareCount,
+      needsShareConfirmation,
+      averageCents: shareCount ? Math.round(totalCents / shareCount) : 0,
       expenseRound: gathering.expenseRound,
       expenses: gathering.expenses,
       balances,
@@ -2130,12 +2209,22 @@ export class GatheringsService {
       this.prisma,
       gatheringId,
       "cuentas",
-      (transaction) =>
-        transaction.participant.update({
+      async (transaction) => {
+        const group = await transaction.gathering.findUniqueOrThrow({
+          where: { id: gatheringId },
+          select: { expenseShares: true },
+        });
+        const shares = group.expenseShares as Record<string, number> | null;
+        if (!shares?.[participantId])
+          throw new BadRequestException(
+            "Para cerrar tu carga tenés que estar incluido en el reparto confirmado.",
+          );
+        return transaction.participant.update({
           where: { id: participantId },
           data: { expensesReadyAt: new Date() },
           select: { id: true, name: true, expensesReadyAt: true },
-        }),
+        });
+      },
     );
   }
 
@@ -2214,15 +2303,22 @@ export class GatheringsService {
     const state = await transaction.gathering.findUnique({
       where: { id: gatheringId },
       select: {
-        participants: { select: { expensesReadyAt: true } },
+        expenseShares: true,
+        participants: { select: { id: true, expensesReadyAt: true } },
         _count: { select: { expenses: true } },
       },
     });
+    const previousShares = state?.expenseShares as Record<
+      string,
+      number
+    > | null;
+    const included =
+      state?.participants.filter(
+        (p) => !previousShares || previousShares[p.id] > 0,
+      ) ?? [];
     const wasClosed =
-      (state?.participants.length ?? 0) > 0 &&
-      state?.participants.every(
-        (candidate) => candidate.expensesReadyAt !== null,
-      ) &&
+      included.length > 0 &&
+      included.every((candidate) => candidate.expensesReadyAt !== null) &&
       (state?._count.expenses ?? 0) > 0;
     if (wasClosed) {
       await transaction.gathering.update({
@@ -2231,7 +2327,7 @@ export class GatheringsService {
       });
     }
     await transaction.participant.updateMany({
-      where: { gatheringId },
+      where: { gatheringId, accountDeletedAt: null },
       data: { expensesReadyAt: null },
     });
   }
