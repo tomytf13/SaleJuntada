@@ -38,7 +38,7 @@ export function AttendanceSummary({
   return (
     <section className="attendance-summary" aria-labelledby="attendance-title">
       <span className="section-kicker">EL GRUPO</span>
-      <h2 id="attendance-title">{gathering.status === "OPEN" ? "Quiénes se sumaron" : "Quiénes vienen"}</h2>
+      <h2 id="attendance-title">{gathering.status === "CLOSED" ? "El grupo de esta juntada" : gathering.status === "OPEN" ? "Quiénes se sumaron" : "Quiénes vienen"}</h2>
       {gathering.status !== "OPEN" ? <p className="attendance-counts" aria-live="polite">
         {summary.going} van · {summary.maybe} no saben · {summary.notGoing} no
         van · {summary.pending} sin responder

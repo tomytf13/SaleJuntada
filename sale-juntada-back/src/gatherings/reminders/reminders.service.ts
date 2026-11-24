@@ -53,7 +53,7 @@ export function pendingReminder(
     !participant.expensesReadyAt &&
     (settlement.shares ? settlement.shares[participant.id] > 0 : participant.rsvpStatus !== "NOT_GOING") &&
     (settlement.expenses.length > 0 ||
-      (participant.rsvpStatus === "GOING" &&
+      (gathering.status !== "CLOSED" && participant.rsvpStatus === "GOING" &&
         gathering.finalizedStart &&
         gathering.finalizedStart <= now)) &&
     !settlement.expenses.some((e) => e.paidByParticipantId === participant.id)

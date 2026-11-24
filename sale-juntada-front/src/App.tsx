@@ -2,6 +2,9 @@ import { Suspense, lazy, useEffect } from "react";
 import { Route, Routes, useLocation, useParams } from "react-router-dom";
 import { GatheringSkeleton } from "./routes/GatheringSkeleton";
 
+import { ReportBug } from "./components/ReportBug";
+const ReportsPage = lazy(() => import("./routes/ReportsPage"));
+
 const LandingPage = lazy(() => import("./routes/LandingPage"));
 const GatheringPage = lazy(() => import("./routes/GatheringPage"));
 const LegalPage = lazy(() => import("./routes/LegalPage"));
@@ -42,11 +45,13 @@ export default function App() {
     <Suspense fallback={<GatheringSkeleton />}>
       <Routes>
         <Route path="/" element={<LandingPage />} />
+        <Route path="/admin/reportes" element={<ReportsPage />} />
         <Route path="/privacidad" element={<LegalPage policy="privacy" />} />
         <Route path="/terminos" element={<LegalPage policy="terms" />} />
         <Route path="/j/:slug/*" element={<GatheringRoute />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
+      {pathname !== "/admin/reportes" && <ReportBug />}
     </Suspense>
   );
 }

@@ -63,7 +63,8 @@ export type GatheringSlot = {
  * `DRAFT` y `PROPOSED` se eliminaron en P1.1: nunca se escribieron ni se
  * leyeron en ninguna parte del producto.
  */
-export type GatheringStatus = "OPEN" | "CONFIRMED" | "CANCELLED";
+export type GatheringStatus = "OPEN" | "CONFIRMED" | "CANCELLED" | "CLOSED";
+export type AppFeedback = { stars: number; comment: string };
 export type GatheringServiceKey =
   "compra" | "pendientes" | "alimentacion" | "cuentas" | "juegos";
 
@@ -85,6 +86,7 @@ export type RsvpSummary = {
 };
 
 export type Gathering = {
+  myFeedback?: AppFeedback | null;
   id: string;
   slug: string;
   title: string;
@@ -375,7 +377,7 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(path: string, init?: RequestInit, withSession = true): Promise<T> {
   const controller = new AbortController();
   const abortFromCaller = () => controller.abort();
   init?.signal?.addEventListener("abort", abortFromCaller, { once: true });
@@ -384,7 +386,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   try {
     const headers = new Headers(init?.headers);
     headers.set("Content-Type", "application/json");
-    if (!headers.has("Authorization") && supabase) {
+    if (withSession && !headers.has("Authorization") && supabase) {
       const { data } = await supabase.auth.getSession();
       if (data.session) headers.set("Authorization", `Bearer ${data.session.access_token}`);
     }
@@ -418,6 +420,24 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   return response.json() as Promise<T>;
 }
+
+export type ReportKind = "BUG" | "IDEA";
+export type ReportStatus = "NEW" | "IN_PROGRESS" | "RESOLVED";
+export type AppReport = { id: string; kind: ReportKind; description: string; status: ReportStatus; createdAt: string };
+
+export const reportService = {
+  submit(input: Pick<AppReport, "id" | "kind" | "description">) {
+    return request<{id:string}>("/reports", {method:"POST", body:JSON.stringify(input)}, false);
+  },
+  list(status: ReportStatus, token: string, after?: string) {
+    const query = new URLSearchParams({status});
+    if (after) query.set("after", after);
+    return request<{items: AppReport[]; next: string | null}>(`/reports?${query}`, {headers:{Authorization:`Bearer ${token}`}});
+  },
+  update(id: string, status: ReportStatus, token: string) {
+    return request(`/reports/${id}`, {method:"PATCH", headers:{Authorization:`Bearer ${token}`}, body:JSON.stringify({status})});
+  },
+};
 
 let purchaseCatalogRequest: Promise<PurchaseCatalog> | null = null;
 
@@ -634,6 +654,14 @@ export const gatheringService = {
         body: JSON.stringify(input),
       },
     );
+  },
+
+  closeGathering(id: string, member: string, token: string) {
+    return request<Gathering>(`/gatherings/${id}/participants/${member}/closure`, {method:"PUT", headers:{"x-participant-token": token}});
+  },
+
+  saveFeedback(id: string, member: string, token: string, feedback: AppFeedback) {
+    return request<AppFeedback>(`/gatherings/${id}/participants/${member}/feedback`, {method:"PUT", headers:{"x-participant-token": token}, body: JSON.stringify(feedback)});
   },
 
   cancelGathering(

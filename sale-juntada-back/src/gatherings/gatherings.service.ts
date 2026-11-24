@@ -1,3 +1,4 @@
+import { GatheringFeedbackDto } from "./dto/gathering-feedback.dto";
 import { UpdateInstagramDto } from "./dto/update-instagram.dto";
 import { UpdateBirthdayDto } from "./dto/update-birthday.dto";
 import { UpdateAvatarDto } from "./dto/update-avatar.dto";
@@ -442,6 +443,7 @@ export class GatheringsService {
     );
     return this.prisma.$transaction(async (transaction) => {
       const gathering = await lockGatheringServices(transaction, gatheringId);
+      if (gathering.status === "CLOSED" && service !== "cuentas") throw new ConflictException("La juntada está cerrada.");
       const disabled = new Set(gathering.disabledServices);
       if (disabled.has(service) === !enabled)
         return { disabledServices: [...disabled] };
@@ -587,6 +589,11 @@ export class GatheringsService {
       ...invitation,
       isParticipant: true as const,
       viewerParticipantId: viewer.id,
+      ...(gathering.status === GatheringStatus.CLOSED && {
+        myFeedback: await this.prisma.gatheringFeedback.findUnique({
+          where: { participantId: viewer.id }, select: { stars: true, comment: true },
+        }),
+      }),
       disabledServices: gathering.disabledServices,
       organizerName: gathering.organizerName,
       expenseRound: gathering.expenseRound,
@@ -722,7 +729,7 @@ export class GatheringsService {
 
     await this.prisma.$transaction(async (transaction) => {
       await transaction.gathering.update({
-        where: { id: gatheringId },
+        where: { id: gatheringId, status: { not: "CLOSED" } },
         data: {
           status: GatheringStatus.CONFIRMED,
           finalizedStart: startsAt,
@@ -838,7 +845,7 @@ export class GatheringsService {
         }
       }
       await transaction.gathering.update({
-        where: { id: gatheringId },
+        where: { id: gatheringId, status: { not: "CLOSED" } },
         data: {
           title: dto.title?.trim() ?? current.title,
           locationHint:
@@ -878,6 +885,27 @@ export class GatheringsService {
     return this.getBySlug(current.slug, participantToken);
   }
 
+  async closeGathering(gatheringId: string, participantId: string, token?: string) {
+    const organizer = await this.participantAuth.requireOrganizer(gatheringId, participantId, token);
+    const result = await this.prisma.gathering.updateMany({
+      where: { id: gatheringId, status: { notIn: ["CANCELLED", "CLOSED"] } },
+      data: { status: "CLOSED" },
+    });
+    const gathering = await this.getBySlug(organizer.gathering.slug, token);
+    if (!result.count && gathering.status !== "CLOSED") throw new ConflictException("La juntada está cancelada.");
+    return gathering;
+  }
+
+  async saveFeedback(gatheringId: string, participantId: string, token: string | undefined, dto: GatheringFeedbackDto) {
+    const participant = await this.participantAuth.requireParticipant(gatheringId, participantId, token);
+    if (participant.gathering.status !== "CLOSED") throw new ConflictException("Podés valorar la app cuando termine la juntada.");
+    const data = { stars: dto.stars, comment: dto.comment?.trim() ?? "" };
+    return this.prisma.gatheringFeedback.upsert({
+      where: { participantId }, create: { participantId, ...data }, update: data,
+      select: { stars: true, comment: true },
+    });
+  }
+
   async cancelGathering(
     gatheringId: string,
     participantId: string,
@@ -898,7 +926,7 @@ export class GatheringsService {
     // El RSVP tampoco se toca. `requireActiveParticipant` ya impide
     // modificarlo después, así que queda como registro de lo que había.
     await this.prisma.gathering.update({
-      where: { id: gatheringId },
+      where: { id: gatheringId, status: { not: "CLOSED" } },
       data: { status: GatheringStatus.CANCELLED },
     });
     return this.getBySlug(organizer.gathering.slug, participantToken);
@@ -949,6 +977,7 @@ export class GatheringsService {
       participantToken,
       "No podés editar esta disponibilidad",
     );
+    if (authorized.gathering.status === GatheringStatus.CLOSED) throw new ConflictException("La juntada está cerrada.");
     if (authorized.gathering.status === GatheringStatus.CONFIRMED) {
       throw new ConflictException("La fecha de la juntada ya está confirmada");
     }
@@ -1963,7 +1992,7 @@ export class GatheringsService {
         p.id,
         saved
           ? (saved[p.id] ?? 0)
-          : gathering.status === "CONFIRMED"
+          : gathering.status === "CONFIRMED" || (gathering.status === "CLOSED" && gathering.finalizedStart)
             ? p.rsvpStatus === "GOING"
               ? 1 + p.plusOnes
               : 0
@@ -2335,6 +2364,7 @@ export class GatheringsService {
   private async ensureGathering(id: string) {
     const gathering = await this.prisma.gathering.findUnique({ where: { id } });
     if (!gathering) throw new NotFoundException("Juntada no encontrada");
+    if (gathering.status === GatheringStatus.CLOSED) throw new ConflictException("La juntada está cerrada.");
     if (gathering.status === GatheringStatus.CANCELLED) {
       throw new ConflictException("La juntada está cancelada");
     }

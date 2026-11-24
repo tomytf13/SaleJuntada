@@ -215,7 +215,7 @@ export class GatheringsGateway implements OnGatewayDisconnect {
 
   gatheringChanged(
     gatheringId: string,
-    action: "confirmed" | "updated" | "cancelled" | "services",
+    action: "confirmed" | "updated" | "cancelled" | "closed" | "services",
   ) {
     this.server.to(this.room(gatheringId)).emit("gathering:changed", {
       action,

@@ -1,3 +1,4 @@
+import { GatheringFeedbackDto } from "./dto/gathering-feedback.dto";
 import { UpdateInstagramDto } from "./dto/update-instagram.dto";
 import { UpdateBirthdayDto } from "./dto/update-birthday.dto";
 import { UpdateAvatarDto } from "./dto/update-avatar.dto";
@@ -332,6 +333,20 @@ export class GatheringsController {
     );
     this.gatheringsGateway.gatheringChanged(gatheringId, "services");
     return result;
+  }
+
+  @Put(":gatheringId/participants/:participantId/closure")
+  async closeGathering(@Param("gatheringId") id: string, @Param("participantId") member: string,
+    @Headers("x-participant-token") token?: string) {
+    const result = await this.gatheringsService.closeGathering(id, member, token);
+    this.gatheringsGateway.gatheringChanged(id, "closed");
+    return result;
+  }
+
+  @Put(":gatheringId/participants/:participantId/feedback")
+  saveFeedback(@Param("gatheringId") id: string, @Param("participantId") member: string,
+    @Headers("x-participant-token") token: string | undefined, @Body() dto: GatheringFeedbackDto) {
+    return this.gatheringsService.saveFeedback(id, member, token, dto);
   }
 
   @Delete(":gatheringId/participants/:participantId/settings")

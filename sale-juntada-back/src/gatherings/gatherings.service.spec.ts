@@ -969,7 +969,7 @@ describe("GatheringsService lifecycle", () => {
 
     expect(result.status).toBe("CONFIRMED");
     expect(prisma.gathering.update).toHaveBeenCalledWith({
-      where: { id: "gathering" },
+      where: { id: "gathering", status: { not: "CLOSED" } },
       data: expect.objectContaining({
         status: "CONFIRMED",
         finalizedLocation: "Yerba Buena",

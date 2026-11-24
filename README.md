@@ -237,3 +237,7 @@ npm run test:smoke
 ## 📄 Licencia
 
 Este proyecto está en desarrollo activo y se usa como base para una solución de coordinación de reuniones y gastos compartidos.
+
+### Bandeja de bugs e ideas
+
+El bichito permite enviar reportes desde la web sin iniciar sesión. El equipo puede gestionarlos desde **Tu cuenta → Gestionar bugs e ideas** o en `/admin/reportes`. Para habilitar el acceso de una cuenta, asignale el booleano `sale_juntada_admin: true` en su `app_metadata` desde la administración de Supabase Auth, conservando las demás claves. Volvé a iniciar sesión para actualizar el menú. La API comprueba el permiso actual al leer o cambiar un reporte. Quitar esa clave revoca el acceso.

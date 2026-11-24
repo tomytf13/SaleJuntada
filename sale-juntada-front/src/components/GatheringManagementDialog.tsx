@@ -65,6 +65,7 @@ export function GatheringManagementDialog({
   onClose(): void;
   onSave(input: UpdateGatheringInput): Promise<void>;
   onCancelGathering(): Promise<void>;
+  onFinishGathering(): Promise<void>;
 }) {
   return (
     <GatheringManagementForm
@@ -81,6 +82,7 @@ function GatheringManagementForm({
   onClose,
   onSave,
   onCancelGathering,
+  onFinishGathering,
 }: {
   open: boolean;
   gathering: Gathering | null;
@@ -88,6 +90,7 @@ function GatheringManagementForm({
   onClose(): void;
   onSave(input: UpdateGatheringInput): Promise<void>;
   onCancelGathering(): Promise<void>;
+  onFinishGathering(): Promise<void>;
 }) {
   const values = gathering
     ? initialValues(gathering)
@@ -373,6 +376,9 @@ function GatheringManagementForm({
       >
         {isSaving ? "Guardando…" : "Guardar cambios"}
       </button>
+      <button className="account-secondary-button" type="button" disabled={isSaving} onClick={() => {
+        if (window.confirm("¿Dar por terminada la juntada? Se cierra la lista de invitados. El grupo podrá valorar la app y terminar las cuentas pendientes.")) void onFinishGathering();
+      }}>Dar por terminada la juntada</button>
       <button
         className="danger-zone-button"
         type="button"

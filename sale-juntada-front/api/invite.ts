@@ -79,7 +79,7 @@ export default async function invite(
       return res.send(card);
     }
     const detail =
-      status === "CANCELLED"
+      status === "CLOSED" ? "Juntada cerrada" : status === "CANCELLED"
         ? "Juntada cancelada"
         : finalizedStart
           ? new Intl.DateTimeFormat("es-AR", {
@@ -91,7 +91,7 @@ export default async function invite(
           : "¿Cuándo podés?";
     const headline = escape(title + " · " + detail);
     const description =
-      status === "CANCELLED"
+      status === "CLOSED" ? "Juntada cerrada" : status === "CANCELLED"
         ? "Esta juntada se canceló."
         : finalizedStart
           ? "Entrá para confirmar si vas."

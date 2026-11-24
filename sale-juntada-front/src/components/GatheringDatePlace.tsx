@@ -26,7 +26,7 @@ export function GatheringDatePlace({ gathering }: { gathering: Gathering }) {
             {minutes > 0 ? <span><Clock3 size={16} aria-hidden="true" />Duración: {duration}</span> : null}
             <small>Horario local{zoneLabel ? ` · ${zoneLabel}` : ""}</small>
           </div>
-        </> : <p>La fecha todavía está por definir. Elegí tus horarios disponibles más abajo.</p>}
+        </> : <p>{gathering.status === "CLOSED" ? "La juntada terminó sin una fecha confirmada." : "La fecha todavía está por definir. Elegí tus horarios disponibles más abajo."}</p>}
       </section>
       <section className="event-place-card" aria-labelledby="event-place-title">
         <div className="event-place-info">

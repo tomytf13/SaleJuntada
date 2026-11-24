@@ -154,6 +154,7 @@ export function AccountDialog({
           <div className="account-success" role="status">
             Tu cuenta está lista. Las nuevas juntadas quedan vinculadas a este perfil.
           </div>
+          {user.app_metadata?.sale_juntada_admin === true && <a href="/admin/reportes">Gestionar bugs e ideas</a>}
           {profileEditor}
           <section className="account-history" aria-labelledby="account-history-title">
             <div className="account-history-heading">
@@ -198,7 +199,7 @@ export function AccountDialog({
                         </span>
                         <strong>{gathering.title}</strong>
                         <small>
-                          {dateLabel} · {gathering.participantCount}{" "}
+                          {gathering.status === "CLOSED" ? "Cerrada · " : ""}{dateLabel} · {gathering.participantCount}{" "}
                           {gathering.participantCount === 1 ? "persona" : "personas"}
                         </small>
                       </button>

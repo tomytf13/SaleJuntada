@@ -15,6 +15,7 @@ enum GatheringStatus {
   /// Tiene fecha confirmada (`finalizedStart`). Recién acá existe el RSVP.
   CONFIRMED
   CANCELLED
+  CLOSED
 }
 
 enum RsvpStatus {
@@ -113,6 +114,7 @@ model Participant {
   plusOnes              Int                    @default(0)
   rsvpAt                DateTime?
   expensesReadyAt       DateTime?
+  feedback              GatheringFeedback?
   reminders             GatheringReminder[]
   availabilities        Availability[]
   expensesPaid          Expense[]
@@ -310,6 +312,14 @@ model CatalogPresentation {
   @@index([productId, isActive, position])
 }
 
+model GatheringFeedback {
+  participantId String      @id
+  participant   Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  stars         Int
+  comment       String      @default("") @db.VarChar(1000)
+  updatedAt     DateTime    @updatedAt
+}
+
 model GatheringReminder {
   participantId String
   deviceId      String
@@ -327,4 +337,25 @@ model ReminderSigningKey {
   id         Int @id
   publicKey  String
   privateKey String
+}
+
+enum ReportKind {
+  BUG
+  IDEA
+}
+
+enum ReportStatus {
+  NEW
+  IN_PROGRESS
+  RESOLVED
+}
+
+model AppReport {
+  id          String       @id @db.Uuid
+  kind        ReportKind
+  description String       @db.VarChar(2000)
+  status      ReportStatus @default(NEW)
+  createdAt   DateTime     @default(now())
+
+  @@index([status, createdAt, id])
 }

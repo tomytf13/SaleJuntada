@@ -9,6 +9,7 @@ import { LocationsModule } from "./locations/locations.module";
 import { ParticipantsModule } from "./participants/participants.module";
 import { PrismaModule } from "./prisma/prisma.module";
 import { RsvpModule } from "./rsvp/rsvp.module";
+import { ReportsController } from "./reports/reports.controller";
 import { UsersModule } from "./users/users.module";
 
 @Module({
@@ -23,7 +24,7 @@ import { UsersModule } from "./users/users.module";
     LocationsModule,
     UsersModule,
   ],
-  controllers: [HealthController],
+  controllers: [HealthController, ReportsController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}

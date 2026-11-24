@@ -1,5 +1,6 @@
 import {
   CanActivate,
+  ConflictException,
   ExecutionContext,
   Injectable,
   UnauthorizedException,
@@ -33,7 +34,7 @@ export class GatheringAccountGuard implements CanActivate {
     if (typeof token === "string") {
       const participant = await this.prisma.participant.findUnique({
         where: { responseToken: token },
-        select: { authUserId: true },
+        select: { authUserId: true, gathering: {select:{status:true}} },
       });
       const owns = participant?.authUserId === identity.id;
       if (action === "getBySlug" && !owns) {
@@ -51,6 +52,10 @@ export class GatheringAccountGuard implements CanActivate {
       ) {
         throw new ForbiddenException("Este acceso no pertenece a tu cuenta");
       }
+      if (participant?.gathering?.status === "CLOSED" && [
+        "setRsvp", "setAvailability", "finalizeGathering", "updateGathering",
+        "cancelGathering", "updateDietaryProfile", "updateBirthday",
+      ].includes(action)) throw new ConflictException("La juntada está cerrada.");
     }
     return true;
   }

@@ -42,7 +42,7 @@ describe("GatheringManagementDialog", () => {
         isSaving={false}
         onClose={vi.fn()}
         onSave={onSave}
-        onCancelGathering={vi.fn()}
+        onFinishGathering={vi.fn()} onCancelGathering={vi.fn()}
       />,
     );
 
@@ -73,7 +73,7 @@ describe("GatheringManagementDialog", () => {
         isSaving={false}
         onClose={vi.fn()}
         onSave={vi.fn()}
-        onCancelGathering={onCancelGathering}
+        onFinishGathering={vi.fn()} onCancelGathering={onCancelGathering}
       />,
     );
 
@@ -103,7 +103,7 @@ it("confirma 21 a 04 del día siguiente con siete horas, en la zona del evento",
       isSaving={false}
       onClose={vi.fn()}
       onSave={onSave}
-      onCancelGathering={vi.fn()}
+      onFinishGathering={vi.fn()} onCancelGathering={vi.fn()}
     />,
   );
   fireEvent.change(screen.getByLabelText("Tipo de horario"), {

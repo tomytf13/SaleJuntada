@@ -29,6 +29,7 @@ export function withActiveGatheringService<T>(
 ) {
   return prisma.$transaction(async (transaction) => {
     const gathering = await lockGatheringServices(transaction, gatheringId);
+    if (gathering.status === "CLOSED" && service !== "cuentas") throw new ConflictException("La juntada está cerrada.");
     if (gathering.disabledServices.includes(service)) {
       throw new ConflictException(
         "Este servicio está desactivado. El historial se puede consultar, pero no modificar.",

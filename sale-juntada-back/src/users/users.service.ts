@@ -106,6 +106,7 @@ export class UsersService {
               },
             });
           }
+          await tx.gatheringFeedback.deleteMany({ where: { participantId: member.id } });
           await tx.gatheringReminder.deleteMany({
             where: { participantId: member.id },
           });

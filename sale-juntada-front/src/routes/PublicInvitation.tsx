@@ -56,7 +56,8 @@ export function PublicInvitation() {
         gathering={{ ...gathering, isParticipant: false, participants: [] }}
         onShare={() => void share()}
       />
-      {gathering.status !== "CANCELLED" && <section className="join-gathering invitation-entry">
+      {gathering.status === "CLOSED" && <p className="status-banner">Esta juntada terminó. Si participaste, ingresá para ver tus cuentas y dejar tu opinión.</p>}
+      {gathering.status !== "CLOSED" && gathering.status !== "CANCELLED" && <section className="join-gathering invitation-entry">
         <span className="invitation-entry-icon" aria-hidden="true">
           <LogIn size={24} />
         </span>

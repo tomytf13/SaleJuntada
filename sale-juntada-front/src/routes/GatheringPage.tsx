@@ -1,3 +1,4 @@
+import { GatheringFeedback } from "../components/GatheringFeedback";
 import { ExpenseSharesEditor } from "../components/ExpenseSharesEditor";
 import { GatheringReminders } from "../components/GatheringReminders";
 import { ParticipantInstagramEditor } from "../components/ParticipantInstagramEditor";
@@ -342,6 +343,15 @@ function GatheringWorkspace() {
   }, [slots]);
 
   const activeGatheringId = activeGathering?.id;
+  useEffect(() => {
+    if (activeGathering?.status !== "CLOSED" || participantSession || !accessToken) return;
+    let active = true;
+    gatheringService.getMyGatherings(accessToken).then(items => {
+      const match = items.find(item => item.slug === slug);
+      if (match && active) setParticipantSession({participantId: match.participant.id, responseToken: match.participant.responseToken});
+    }).catch(() => { if (active) setApiError("No pudimos recuperar tu participación. Volvé a abrir la juntada desde tu cuenta."); });
+    return () => { active = false; };
+  }, [activeGathering?.status, participantSession, accessToken, slug]);
   const sessionParticipantId = participantSession?.participantId;
   const sessionResponseToken = participantSession?.responseToken;
   const isParticipant = Boolean(authorizedSession && activeGathering?.isParticipant);
@@ -628,7 +638,8 @@ function GatheringWorkspace() {
       refreshSocial();
       refreshMatches();
       setPurchaseRevision((current) => current + 1);
-      if (payload?.action === "confirmed")
+      if (payload?.action === "closed") showNotice("Quien organiza dio por terminada la juntada.");
+      else if (payload?.action === "confirmed")
         showNotice("El organizador confirmó la fecha.");
       else if (payload?.action === "services") {
         void refreshExpenses().catch(() => {});
@@ -1129,24 +1140,26 @@ function GatheringWorkspace() {
     }
   };
 
-  const cancelActiveGathering = async () => {
+  const finishGathering = async (close: boolean) => {
     if (!activeGathering || !participantSession) return;
     setIsManagingGathering(true);
     setApiError("");
     try {
-      const updated = await gatheringService.cancelGathering(
+      const save = close ? gatheringService.closeGathering : gatheringService.cancelGathering;
+      const updated = await save(
         activeGathering.id,
         participantSession.participantId,
         participantSession.responseToken,
       );
       setActiveGathering(updated);
       setShowManageGathering(false);
-      showNotice("La juntada quedó cancelada.");
+      if (close) navigate(basePath);
+      showNotice(close ? "La juntada quedó cerrada." : "La juntada quedó cancelada.");
     } catch (error) {
       setApiError(
         error instanceof Error
           ? error.message
-          : "No pudimos cancelar la juntada.",
+          : "No pudimos guardar el cambio.",
       );
     } finally {
       setIsManagingGathering(false);
@@ -1399,8 +1412,9 @@ function GatheringWorkspace() {
     : null;
   const moduleTitle = gatheringModuleTitle(view);
   const serviceArchived = !isGatheringServiceEnabled(activeGathering, view);
+  const closed = activeGathering.status === "CLOSED";
   const moduleReadOnly =
-    activeGathering.status === "CANCELLED" || serviceArchived;
+    activeGathering.status === "CANCELLED" || serviceArchived || (closed && !isAccounts && view !== "notificaciones");
 
   return (
     <main
@@ -1426,7 +1440,7 @@ function GatheringWorkspace() {
             </m.span>
           ) : null}
           {currentParticipant?.isOrganizer &&
-          activeGathering.status !== "CANCELLED" ? (
+          !closed && activeGathering.status !== "CANCELLED" ? (
             <button
               className="manage-button"
               type="button"
@@ -1498,7 +1512,7 @@ function GatheringWorkspace() {
               <Link to={basePath}>Volver a la juntada</Link>
             </p>
           ) : null}
-          {!currentParticipant && activeGathering.status !== "CANCELLED" ? (
+          {!currentParticipant && !closed && activeGathering.status !== "CANCELLED" ? (
             <JoinGathering
               open={showJoin}
               defaultName={user ? authName : undefined}
@@ -1523,6 +1537,17 @@ function GatheringWorkspace() {
               <Link to={`${basePath}/servicios`}>Ir a Servicios →</Link>
             </div>
           ) : null}
+          {closed && !view && currentParticipant && isGatheringServiceEnabled(activeGathering, "cuentas") && (
+            <Link className="gathering-attendance-link" to={basePath + "/cuentas"}>Ver gastos y transferencias →</Link>
+          )}
+          {closed && !view && currentParticipant && participantSession && (
+            <GatheringFeedback key={currentParticipant.id} saved={activeGathering.myFeedback}
+              onSave={async feedback => {
+                const saved = await gatheringService.saveFeedback(activeGathering.id, currentParticipant.id, participantSession.responseToken, feedback);
+                setActiveGathering(current => current ? {...current, myFeedback: saved} : current);
+              }} />
+          )}
+          {closed && view && <p className="status-banner">La juntada terminó. <Link to={basePath}>Volver al inicio</Link></p>}
           <fieldset
             className="gathering-module-content"
             disabled={moduleReadOnly}
@@ -1610,7 +1635,7 @@ function GatheringWorkspace() {
                 participantId={currentParticipant.id} token={participantSession.responseToken} />
             )}
 
-            {overviewProps && !view ? (
+            {overviewProps && !view && !closed ? (
               <GatheringHome {...overviewProps} />
             ) : null}
             {overviewProps && participantSession && view === "servicios" ? (
@@ -1631,7 +1656,7 @@ function GatheringWorkspace() {
               <section className="workspace" id="disponibilidad">
                 <div className="section-heading">
                   <div>
-                    <span className="section-kicker">JUNTADA ACTIVA</span>
+                    <span className="section-kicker">{closed ? "JUNTADA CERRADA" : "JUNTADA ACTIVA"}</span>
                     <h2>{eventName}</h2>
                   </div>
                 </div>
@@ -2035,7 +2060,7 @@ function GatheringWorkspace() {
                     </AnimatePresence>
                   </div>
 
-                  {((expenseSettlement?.expenses.length ?? 0) > 0 || activeGathering.status === "CONFIRMED") && (
+                  {((expenseSettlement?.expenses.length ?? 0) > 0 || closed || activeGathering.status === "CONFIRMED") && (
                     <div
                       className={`expense-closing ${expenseSettlement?.allReady ? "ready" : ""}`}
                     >
@@ -2555,12 +2580,13 @@ function GatheringWorkspace() {
       />
 
       <GatheringManagementDialog
-        open={showManageGathering}
+        open={showManageGathering && !closed}
         gathering={activeGathering}
         isSaving={isManagingGathering}
         onClose={() => setShowManageGathering(false)}
         onSave={saveGatheringSettings}
-        onCancelGathering={cancelActiveGathering}
+        onCancelGathering={() => finishGathering(false)}
+        onFinishGathering={() => finishGathering(true)}
       />
 
       <AnimatedDialog

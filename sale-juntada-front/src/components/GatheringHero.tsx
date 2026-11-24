@@ -32,7 +32,7 @@ export function GatheringHero({
         day: "numeric",
         month: "long",
       }).format(startsAt)
-    : "Buscando fecha";
+    : gathering.status === "CLOSED" ? "Sin fecha confirmada" : "Buscando fecha";
   const time = startsAt
     ? new Intl.DateTimeFormat("es-AR", {
         timeZone: gathering.timeZone,
@@ -60,7 +60,7 @@ export function GatheringHero({
             h
           </span>
         ) : (
-          <span>El horario se define entre todos</span>
+          gathering.status !== "CLOSED" && <span>El horario se define entre todos</span>
         )}
       </span>
       {gathering.isParticipant ? (
@@ -83,7 +83,7 @@ export function GatheringHero({
         <div className="invite-intro">
           <span className="invite-eyebrow">
             <span aria-hidden="true" />
-            {gathering.status === "CANCELLED"
+            {gathering.status === "CLOSED" ? "JUNTADA CERRADA" : gathering.status === "CANCELLED"
               ? "JUNTADA CANCELADA"
               : gathering.isParticipant
                 ? "TU JUNTADA"
@@ -136,13 +136,13 @@ export function GatheringHero({
               {count === 1 ? "persona ya se sumó" : "personas ya se sumaron"}
             </strong>
             <small>
-              {gathering.isParticipant
+              {gathering.status === "CLOSED" ? "Participaron en esta juntada" : gathering.isParticipant
                 ? "Ya sos parte del plan"
                 : "Sumate y organizate con el grupo"}
             </small>
           </span>
         </div>
-        <button
+        {gathering.status !== "CLOSED" && <button
           className="share-button invite-share"
           type="button"
           onClick={onShare}
@@ -150,7 +150,7 @@ export function GatheringHero({
           <Share2 size={17} aria-hidden="true" />
           Compartir invitación
           <ArrowUpRight size={16} aria-hidden="true" />
-        </button>
+        </button>}
       </div>
     </section>
   );

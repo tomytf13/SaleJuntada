@@ -24,6 +24,12 @@ describe("recordatorios personales", () => {
       pendingReminder(person, future, null, future.finalizedStart),
     ).toBeNull();
   });
+  it("al terminar la juntada sólo avisa si hay cuentas pendientes", () => {
+    const closed = { ...future, status: "CLOSED" };
+    expect(pendingReminder(going, closed, empty, future.finalizedStart)).toBeNull();
+    expect(pendingReminder(person, closed, empty, now)).toBeNull();
+    expect(pendingReminder(going, closed, { ...empty, allReady: true, transfers: [{ fromParticipantId: "me", settled: false }] }, now)?.page).toBe("cuentas/transferencias");
+  });
   it("recuerda el primer gasto y deja de hacerlo al cargarlo o cerrar la carga", () => {
     expect(pendingReminder(going, future, empty, now)).toBeNull();
     expect(

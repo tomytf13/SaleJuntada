@@ -141,7 +141,7 @@ export function GatheringPersonalTasks({
           to={`${base}/${gathering.status === "OPEN" ? "fecha" : "invitados"}`}
         >
           <strong>
-            {gathering.status === "OPEN"
+            {gathering.status === "CLOSED" ? "Ver quiénes participaron" : gathering.status === "OPEN"
               ? "Mis horarios disponibles"
               : participant.rsvpStatus
                 ? "Revisar mi asistencia"

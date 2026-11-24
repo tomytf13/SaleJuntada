@@ -63,6 +63,15 @@ describe("SupabaseAuthService", () => {
     ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
+  it("sólo reconoce el permiso administrativo en los metadatos actuales del servidor", async () => {
+    const service = configuredService();
+    getClaims.mockResolvedValue({data:{claims:{sub:"me",app_metadata:{sale_juntada_admin:true}}}});
+    getUser.mockResolvedValueOnce({data:{user:{id:"me",user_metadata:{sale_juntada_admin:true}}}});
+    expect((await service.requireIdentity("Bearer test")).isAppAdmin).toBeUndefined();
+    getUser.mockResolvedValueOnce({data:{user:{id:"me",app_metadata:{sale_juntada_admin:true}}}});
+    expect((await service.requireIdentity("Bearer test")).isAppAdmin).toBe(true);
+  });
+
   it("devuelve sólo la identidad verificada del subject", async () => {
     const service = configuredService();
     getUser.mockResolvedValue({ data: { user: { id: "auth-user-id" } } });

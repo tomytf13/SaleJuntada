@@ -10,6 +10,7 @@ export type AuthIdentity = {
   id: string;
   email: string | null;
   expiresAt?: number;
+  isAppAdmin?: boolean;
 };
 
 @Injectable()
@@ -62,6 +63,7 @@ export class SupabaseAuthService {
     }
     return {
       id: subject,
+      ...(live.data.user.app_metadata?.sale_juntada_admin === true && { isAppAdmin: true }),
       ...(typeof data.claims.exp === "number"
         ? { expiresAt: data.claims.exp }
         : {}),

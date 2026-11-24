@@ -1,0 +1,121 @@
+.bug-launcher {
+  position: fixed;
+  z-index: 46;
+  left: max(12px, env(safe-area-inset-left));
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 32px;
+  padding: 0 9px;
+  border: 1px solid #0b4937;
+  border-radius: 24px;
+  background: #fff7e7;
+  color: #0b4937;
+  box-shadow: 0 3px 12px #0b493726;
+  font-weight: 700;
+  font-size: 12px;
+}
+.bug-launcher::before {
+  content: "";
+  position: absolute;
+  inset: -6px;
+}
+.bug-launcher svg {
+  fill: #b9f54a;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .bug-launcher {
+    animation: bug-arrives 2s ease-out 1;
+  }
+  .bug-launcher svg {
+    animation: bug-steps 0.22s ease-in-out 8 alternate;
+  }
+  .bug-launcher:is(:hover, :focus-visible, :active),
+  .bug-launcher:is(:hover, :focus-visible, :active) svg {
+    animation-play-state: paused;
+  }
+  @keyframes bug-arrives {
+    from {
+      transform: translateX(min(24vw, 140px));
+    }
+    to {
+      transform: translateX(0);
+    }
+  }
+  @keyframes bug-steps {
+    from {
+      transform: translateY(1px) rotate(-8deg);
+    }
+    to {
+      transform: translateY(-1px) rotate(8deg);
+    }
+  }
+}
+@media (max-width: 820px) {
+  .bug-launcher {
+    bottom: calc(80px + env(safe-area-inset-bottom));
+    width: 32px;
+    padding: 0;
+  }
+  .bug-launcher span {
+    display: none;
+  }
+}
+.bug-sheet form,
+.bug-description {
+  display: grid;
+  gap: 14px;
+}
+.bug-sheet fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.bug-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0 18px;
+}
+.bug-options label {
+  display: inline-flex;
+  flex-flow: row;
+  align-items: center;
+  gap: 7px;
+  padding: 10px;
+  border: 1px solid #80978d;
+  border-radius: 12px;
+  cursor: pointer;
+}
+.bug-options label:has(:checked) {
+  background: #e6f5c1;
+  border-color: #0b4937;
+}
+.bug-options input {
+  width: 16px;
+  height: 16px;
+  accent-color: #0b4937;
+}
+.bug-description textarea {
+  width: 100%;
+  border: 1px solid #80978d;
+  border-radius: 10px;
+  padding: 10px;
+  font: inherit;
+  resize: vertical;
+}
+.bug-sheet small {
+  display: block;
+  margin-top: 8px;
+}
+.report-item {
+  border-top: 1px solid #c5cfca;
+  padding: 16px 0;
+}
+.report-item p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
